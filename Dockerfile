@@ -22,6 +22,10 @@ RUN mkdir config
 COPY config/config.exs config/$MIX_ENV.exs config/
 RUN mix deps.compile
 
+# Bake the current IANA tzdata release into the image so containers don't
+# have to download it from the tzdata release server on first boot.
+RUN mix run --no-start -e "Application.ensure_all_started(:tzdata); Tzdata.ReleaseUpdater.poll_for_update()"
+
 # Install npm packages early for better caching
 COPY assets/package.json assets/package-lock.json ./assets/
 RUN cd assets && npm ci --progress=false --no-audit --loglevel=error
