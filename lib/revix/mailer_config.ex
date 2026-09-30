@@ -38,7 +38,11 @@ defmodule Revix.MailerConfig do
       port: parse_port(env["SMTP_PORT"]),
       ssl: truthy?(env["SMTP_SSL"]),
       tls: parse_enum(env["SMTP_TLS"], "SMTP_TLS"),
-      auth: parse_enum(env["SMTP_AUTH"], "SMTP_AUTH")
+      auth: parse_enum(env["SMTP_AUTH"], "SMTP_AUTH"),
+      # gen_smtp never verified TLS certificates; OTP 28 flipped the ssl
+      # default to verify_peer, which breaks STARTTLS against servers whose
+      # CA chain Erlang cannot resolve. Restore the historical behaviour.
+      tls_options: [verify: :verify_none]
     ]
     |> maybe_put(:username, env["SMTP_USERNAME"])
     |> maybe_put(:password, env["SMTP_PASSWORD"])
