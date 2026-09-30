@@ -16,7 +16,8 @@ defmodule Revix.MailerConfigTest do
                  port: 587,
                  ssl: false,
                  tls: :if_available,
-                 auth: :if_available
+                 auth: :if_available,
+                 tls_options: [verify: :verify_none]
                ]
     end
 
