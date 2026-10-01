@@ -133,7 +133,24 @@ end
 
 # SMTP mail delivery. When SMTP_HOST is set, the mailer switches from its
 # environment default (Local in dev, SES in prod) to the SMTP adapter.
-case Revix.MailerConfig.smtp_config() do
-  nil -> :ok
-  smtp -> config :revix, Revix.Mailer, smtp
+#
+# The relay is probed at startup (handshake + auth, no mail sent) so a
+# misconfigured SMTP aborts the boot instead of failing on the first
+# outbound email. Skipped in the test environment; disable in dev/prod
+# with SMTP_STARTUP_CHECK=false.
+if config_env() != :test do
+  case Revix.MailerConfig.smtp_config() do
+    nil ->
+      :ok
+
+    smtp ->
+      config :revix, Revix.Mailer, smtp
+
+      if System.get_env("SMTP_STARTUP_CHECK", "true") not in ["false", "0"] do
+        case Revix.MailerProbe.check(smtp) do
+          :ok -> :ok
+          error -> raise "SMTP startup check failed: #{inspect(error)}"
+        end
+      end
+  end
 end
