@@ -70,6 +70,7 @@ defmodule Revix.MailerConfigTest do
           MailerConfig.smtp_config(%{"SMTP_HOST" => "smtp.example.com", "SMTP_SSL" => value})
 
         assert config[:ssl] == true
+        assert config[:sockopts] == [verify: :verify_none]
       end
     end
 
@@ -79,6 +80,7 @@ defmodule Revix.MailerConfigTest do
           MailerConfig.smtp_config(%{"SMTP_HOST" => "smtp.example.com", "SMTP_SSL" => value})
 
         assert config[:ssl] == false
+        refute Keyword.has_key?(config, :sockopts)
       end
     end
 
