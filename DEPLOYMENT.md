@@ -83,4 +83,4 @@ The container entrypoint waits for Postgres to be ready, runs migrations automat
 
 **Reverse proxy:** the app listens on `127.0.0.1:${REVIX_PORT}`. Point your proxy at that address and forward `X-Forwarded-For` and `X-Forwarded-Proto` headers so Phoenix generates correct URLs and redirects.
 
-**Optional vars:** `POOL_SIZE` (default 10), `AWS_REGION` (default `us-east-1`), `ECTO_IPV6=true` for IPv6 database connections. Setting `SMTP_HOST` switches outbound email from SES to SMTP (with `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SSL`, `SMTP_TLS`, `SMTP_AUTH`, `SMTP_HOSTNAME`, `SMTP_RETRIES` as needed).
+**Optional vars:** `POOL_SIZE` (default 10), `AWS_REGION` (default `us-east-1`), `ECTO_IPV6=true` for IPv6 database connections. Setting `SMTP_HOST` switches outbound email from SES to SMTP (with `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SSL`, `SMTP_TLS`, `SMTP_AUTH`, `SMTP_HOSTNAME`, `SMTP_RETRIES` as needed). When SMTP is enabled, the relay is probed at boot (handshake + auth, no mail sent) and a failed check aborts startup; disable with `SMTP_STARTUP_CHECK=false`.
