@@ -6,6 +6,8 @@ defmodule Revix.Uploaders.Image do
 
   @versions [:original, :large, :medium, :thumb]
 
+  @acl :public_read
+
   def validate({file, _}) do
     validate_image(
       file,

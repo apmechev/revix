@@ -6,6 +6,8 @@ defmodule Revix.Uploaders.Avatar do
 
   @versions [:thumb]
 
+  @acl :public_read
+
   def validate({file, _}) do
     validate_image(
       file,
