@@ -27,6 +27,8 @@ AWS_SECRET_ACCESS_KEY=
 AWS_S3_REGION=
 AWS_S3_BUCKET=           # media uploads
 AWS_S3_DUMP_BUCKET=      # database backups
+S3_ENDPOINT=             # custom S3 endpoint (e.g., https://r3-it.storage.cloud.it for Aruba Cloud).
+                         # Leave empty to use AWS S3.
 ```
 
 Create a `docker-compose.yml`:
