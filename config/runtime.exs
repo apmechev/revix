@@ -114,17 +114,41 @@ if config_env() == :prod do
     ]
 
   bucket = System.fetch_env!("AWS_S3_BUCKET")
-  region = System.fetch_env!("AWS_S3_REGION")
+  region = System.get_env("AWS_S3_REGION") || System.get_env("AWS_REGION") || "us-east-1"
+  s3_endpoint = System.get_env("S3_ENDPOINT")
+
+  # ExAws needs a non-nil region even for non-AWS endpoints; without one it
+  # crashes in ExAws.Config.Defaults.host/2 trying to partition a nil region.
+  config :ex_aws, region: region
+
+  # S3-compatible services (Aruba Cloud, MinIO, Wasabi, ...) expose a
+  # path-style endpoint; AWS keeps its virtual-hosted default.
+  if s3_endpoint do
+    {s3_scheme, s3_host} =
+      case String.split(s3_endpoint, "://", parts: 2) do
+        [scheme, host] -> {scheme <> "://", host}
+        [host] -> {"https://", host}
+      end
+
+    config :ex_aws, :s3,
+      scheme: s3_scheme,
+      host: s3_host,
+      region: region
+  end
 
   config :waffle,
     storage: Waffle.Storage.S3,
     bucket: bucket,
-    virtual_host: true,
-    asset_host: "https://#{bucket}.s3.#{region}.amazonaws.com"
+    virtual_host: s3_endpoint == nil,
+    asset_host:
+      if(s3_endpoint,
+        do: "#{String.trim_trailing(s3_endpoint, "/")}/#{bucket}",
+        else: "https://#{bucket}.s3.#{region}.amazonaws.com"
+      )
 
   config :revix, Revix.Mailer,
     adapter: Swoosh.Adapters.ExAwsAmazonSES,
-    region: region
+    region: System.get_env("AWS_REGION") || region
 
   config :revix, :sender,
     name: System.get_env("MAIL_SENDER_NAME") || "Revix",
