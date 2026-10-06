@@ -1,10 +1,10 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - dev
-      - main
+      - x86-image
     paths-ignore:
       - 'docs/**'
       - '**.md'
@@ -19,13 +19,13 @@ on:
 env:
   ELIXIR_VERSION: "1.19.5"
   OTP_VERSION: "28.3"
-  ImageOS: ubuntu24
+  ImageOS: ubuntu26
 
 jobs:
   test:
     name: Test
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
 
     services:
       postgres:
@@ -118,7 +118,7 @@ jobs:
     name: Build and push Docker image
     needs: test
     if: always() && github.event_name == 'push' && (needs.test.result == 'success' || needs.test.result == 'skipped')
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04
 
     permissions:
       contents: read
@@ -141,7 +141,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository }}-x86
           tags: |
             type=raw,value=latest
             type=ref,event=branch
@@ -152,5 +152,6 @@ jobs:
         with:
           context: .
           push: true
+          platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
