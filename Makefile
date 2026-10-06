@@ -10,7 +10,7 @@ GIT_SHA := $(shell git rev-parse --short HEAD)
 FULL_VERSION := $(VERSION_BASE).$(PATCH)+g$(GIT_SHA)
 DOCKER_TAG := $(VERSION_BASE).$(PATCH)-g$(GIT_SHA)
 VERSION := $(FULL_VERSION)
-APP := ghcr.io/curt/revix
+APP := ghcr.io/apmechev/revix
 
 ARCH := $(shell uname -m)
 ARCH := $(if $(findstring aarch64,$(ARCH)),arm64,$(ARCH))
