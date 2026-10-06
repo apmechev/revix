@@ -13,7 +13,7 @@ services:
       - pg18_data:/var/lib/postgresql/data
 
   app:
-    image: ghcr.io/curt/revix:${DOCKER_TAG}
+    image: ghcr.io/apmechev/revix-x86:${DOCKER_TAG}
     build:
       context: .
       dockerfile: Dockerfile
