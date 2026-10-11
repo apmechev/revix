@@ -465,6 +465,28 @@ defmodule RevixWeb.PlaceNewLiveTest do
       assert html =~ "No places found nearby"
     end
 
+    test "shows an error message when the OSM search fails", %{conn: conn} do
+      Req.Test.stub(:overpass, fn conn ->
+        conn
+        |> Plug.Conn.put_status(504)
+        |> Plug.Conn.send_resp(504, "Gateway Timeout")
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/places/new")
+      Req.Test.allow(:overpass, self(), view.pid)
+
+      view
+      |> form("#place-new-form", place: %{name: "", latitude: "40.0", longitude: "-105.0"})
+      |> render_change()
+
+      render_click(view, "search_nearby")
+      html = wait_for_text(view, "search OpenStreetMap for nearby places")
+
+      assert html =~ "504"
+      refute html =~ "No places found nearby"
+      refute html =~ "Searching for nearby places"
+    end
+
     test "selecting an OSM result pre-fills osm_type and osm_id", %{conn: conn} do
       Req.Test.stub(:overpass, fn conn ->
         Req.Test.json(conn, %{

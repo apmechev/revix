@@ -195,7 +195,9 @@ defmodule RevixWeb.CheckinNewLiveTest do
       refute html =~ "loading-spinner"
     end
 
-    test "OSM returns HTTP error — DB results still shown, spinner gone", %{conn: conn} do
+    test "OSM returns HTTP error — DB results and error message shown, spinner gone", %{
+      conn: conn
+    } do
       place =
         place_fixture(%{
           name: "DB Only Place",
@@ -212,10 +214,12 @@ defmodule RevixWeb.CheckinNewLiveTest do
       html = wait_for_place_search(view)
 
       assert html =~ place.name
+      assert html =~ "search OpenStreetMap for nearby places"
+      assert html =~ "429"
       refute html =~ "loading-spinner"
     end
 
-    test "OSM transport error — LiveView survives, spinner gone", %{conn: conn} do
+    test "OSM transport error — error message shown instead of empty state", %{conn: conn} do
       Req.Test.stub(:overpass, fn conn ->
         Req.Test.transport_error(conn, :timeout)
       end)
@@ -225,6 +229,40 @@ defmodule RevixWeb.CheckinNewLiveTest do
       render_hook(view, "locate", %{lat: 0.0, lon: 0.0, accuracy: 5.0})
       html = wait_for_place_search(view)
 
+      assert html =~ "search OpenStreetMap for nearby places"
+      assert html =~ "timed out"
+      refute html =~ "No places found nearby"
+      refute html =~ "loading-spinner"
+    end
+
+    test "shows an error message when the search task crashes", %{conn: conn} do
+      test_pid = self()
+
+      Req.Test.stub(:overpass, fn conn ->
+        send(test_pid, {:overpass_called, self()})
+
+        receive do
+          :release -> Req.Test.json(conn, %{"elements" => []})
+        end
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/checkins/new")
+      Req.Test.allow(:overpass, self(), view.pid)
+      render_hook(view, "locate", %{lat: 0.0, lon: 0.0, accuracy: 5.0})
+
+      assert_receive {:overpass_called, task_pid}, 1000
+      assigns = :sys.get_state(view.pid).socket.assigns
+
+      send(
+        view.pid,
+        {:DOWN, assigns.place_task_ref, :process, task_pid, {%RuntimeError{message: "boom"}, []}}
+      )
+
+      send(task_pid, :release)
+
+      html = wait_for_text(view, "failed unexpectedly")
+
+      assert html =~ "boom"
       refute html =~ "loading-spinner"
     end
 

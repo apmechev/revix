@@ -871,4 +871,80 @@ defmodule Revix.PlacesTest do
       assert !!changeset.errors[:latitude] or !!changeset.errors[:longitude]
     end
   end
+
+  describe "search_nearby_osm/3" do
+    test "returns {:ok, results} when Overpass responds successfully" do
+      Req.Test.stub(:overpass, fn conn ->
+        Req.Test.json(conn, %{
+          "elements" => [
+            %{
+              "type" => "node",
+              "id" => 42,
+              "lat" => 40.001,
+              "lon" => -105.001,
+              "tags" => %{"name" => "Test Cafe", "amenity" => "cafe"}
+            }
+          ]
+        })
+      end)
+
+      assert {:ok, [result]} = Places.search_nearby_osm(40.0, -105.0, 100.0)
+      assert result.name == "Test Cafe"
+      assert result.osm_type == :node
+      assert result.osm_id == 42
+    end
+
+    test "returns {:error, reason} when Overpass responds with an HTTP error" do
+      Req.Test.stub(:overpass, fn conn ->
+        conn
+        |> Plug.Conn.put_status(429)
+        |> Plug.Conn.send_resp(429, "Too Many Requests")
+      end)
+
+      assert {:error, {:http_error, 429}} = Places.search_nearby_osm(40.0, -105.0, 100.0)
+    end
+
+    test "returns {:error, reason} on transport error" do
+      Req.Test.stub(:overpass, fn conn ->
+        Req.Test.transport_error(conn, :timeout)
+      end)
+
+      assert {:error, %Req.TransportError{reason: :timeout}} =
+               Places.search_nearby_osm(40.0, -105.0, 100.0)
+    end
+  end
+
+  describe "format_nearby_search_error/1" do
+    test "describes HTTP 429 as rate limiting" do
+      message = Places.format_nearby_search_error({:http_error, 429})
+
+      assert message =~ "Couldn't search OpenStreetMap for nearby places"
+      assert message =~ "429"
+    end
+
+    test "describes HTTP 504 as a timeout" do
+      message = Places.format_nearby_search_error({:http_error, 504})
+
+      assert message =~ "timed out"
+      assert message =~ "504"
+    end
+
+    test "describes other HTTP errors with the status code" do
+      message = Places.format_nearby_search_error({:http_error, 500})
+
+      assert message =~ "HTTP 500"
+    end
+
+    test "describes transport timeouts" do
+      message = Places.format_nearby_search_error(%Req.TransportError{reason: :timeout})
+
+      assert message =~ "timed out"
+    end
+
+    test "describes unknown reasons with the inspected term" do
+      message = Places.format_nearby_search_error(:something_weird)
+
+      assert message =~ "something_weird"
+    end
+  end
 end

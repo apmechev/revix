@@ -102,7 +102,17 @@
           </div>
 
           <div
-            :if={not @osm_loading and @osm_searched and @osm_results == []}
+            :if={@osm_search_error}
+            class="mb-4 text-sm text-error"
+          >
+            {@osm_search_error}
+          </div>
+
+          <div
+            :if={
+              not @osm_loading and @osm_searched and @osm_results == [] and
+                is_nil(@osm_search_error)
+            }
             class="mb-4 text-sm text-base-content/70"
           >
             No places found nearby.

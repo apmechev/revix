@@ -21,6 +21,7 @@ defmodule RevixWeb.CheckinNewLive do
       |> assign(:place_searched, false)
       |> assign(:place_loading, false)
       |> assign(:place_task_ref, nil)
+      |> assign(:place_search_error, nil)
       |> assign(:place_list_open, true)
       |> assign(:selected_place, nil)
       |> assign(:place_mode, :none)
@@ -73,6 +74,7 @@ defmodule RevixWeb.CheckinNewLive do
      |> assign(:place_searched, true)
      |> assign(:place_loading, true)
      |> assign(:place_task_ref, task.ref)
+     |> assign(:place_search_error, nil)
      |> assign(:place_list_open, true)
      |> assign(:place_changeset, place_changeset)}
   end
@@ -309,15 +311,23 @@ defmodule RevixWeb.CheckinNewLive do
   end
 
   @impl true
-  def handle_info({ref, {:osm_results, osm_results, db_results}}, socket)
+  def handle_info({ref, {:osm_results, osm_result, db_results}}, socket)
       when is_reference(ref) do
     if socket.assigns.place_task_ref == ref do
       Process.demonitor(ref, [:flush])
+
+      {osm_results, search_error} =
+        case osm_result do
+          {:ok, results} -> {results, nil}
+          {:error, reason} -> {[], Places.format_nearby_search_error(reason)}
+        end
+
       merged = Places.merge_place_results(db_results, osm_results)
 
       socket =
         socket
         |> assign(:place_results, merged)
+        |> assign(:place_search_error, search_error)
         |> assign(:place_loading, false)
         |> assign(:place_task_ref, nil)
 
@@ -351,12 +361,16 @@ defmodule RevixWeb.CheckinNewLive do
     end
   end
 
-  def handle_info({:DOWN, ref, :process, _pid, _reason}, socket) do
+  def handle_info({:DOWN, ref, :process, _pid, reason}, socket) do
     if socket.assigns.place_task_ref == ref do
       {:noreply,
        socket
        |> assign(:place_loading, false)
-       |> assign(:place_task_ref, nil)}
+       |> assign(:place_task_ref, nil)
+       |> assign(
+         :place_search_error,
+         "The nearby-places search failed unexpectedly (#{format_task_exit(reason)}). Please try again."
+       )}
     else
       {:noreply, socket}
     end
@@ -483,6 +497,12 @@ defmodule RevixWeb.CheckinNewLive do
       _ -> 0.0
     end
   end
+
+  defp format_task_exit({exception, _stacktrace}) when is_exception(exception) do
+    Exception.message(exception)
+  end
+
+  defp format_task_exit(reason), do: inspect(reason)
 
   defp parse_index(value) do
     case Integer.parse(value) do

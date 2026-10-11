@@ -56,6 +56,59 @@ defmodule RevixWeb.PlaceControllerTest do
     end
   end
 
+  describe "GET /api/places/search" do
+    setup :register_and_log_in_person
+
+    test "returns merged DB and OSM results", %{conn: conn} do
+      place_fixture(%{
+        name: "API Cafe",
+        coordinates: %Geo.Point{coordinates: {-105.0, 40.0}, srid: 4326}
+      })
+
+      Req.Test.stub(:overpass, fn conn ->
+        Req.Test.json(conn, %{
+          "elements" => [
+            %{
+              "type" => "node",
+              "id" => 42,
+              "lat" => 40.001,
+              "lon" => -105.001,
+              "tags" => %{"name" => "API OSM Bakery"}
+            }
+          ]
+        })
+      end)
+
+      conn = get(conn, "/api/places/search?lat=40.0&lon=-105.0&accuracy=10")
+      response = json_response(conn, 200)
+
+      names = Enum.map(response, & &1["name"])
+      assert "API Cafe" in names
+      assert "API OSM Bakery" in names
+    end
+
+    test "returns DB results when the OSM search fails", %{conn: conn} do
+      place_fixture(%{
+        name: "API Local Only",
+        coordinates: %Geo.Point{coordinates: {-105.0, 40.0}, srid: 4326}
+      })
+
+      Req.Test.stub(:overpass, fn conn ->
+        Plug.Conn.send_resp(conn, 429, "Too Many Requests")
+      end)
+
+      conn = get(conn, "/api/places/search?lat=40.0&lon=-105.0&accuracy=10")
+      response = json_response(conn, 200)
+
+      assert [%{"name" => "API Local Only"}] = response
+    end
+
+    test "returns an empty list for invalid coordinates", %{conn: conn} do
+      conn = get(conn, "/api/places/search?lat=bad&lon=-105.0")
+      assert json_response(conn, 200) == []
+    end
+  end
+
   describe "GET /places head links" do
     test "includes a self-referential canonical link", %{conn: conn} do
       conn = get(conn, ~p"/places")

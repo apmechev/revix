@@ -34,7 +34,8 @@ defmodule RevixWeb.PlaceNewLive do
        |> assign(:osm_loading, false)
        |> assign(:osm_list_open, true)
        |> assign(:osm_sync_loading, false)
-       |> assign(:osm_sync_error, nil)}
+       |> assign(:osm_sync_error, nil)
+       |> assign(:osm_search_error, nil)}
     end
   end
 
@@ -104,6 +105,7 @@ defmodule RevixWeb.PlaceNewLive do
        |> assign(:osm_searched, true)
        |> assign(:osm_loading, true)
        |> assign(:osm_search_task_ref, task.ref)
+       |> assign(:osm_search_error, nil)
        |> assign(:osm_list_open, true)}
     else
       {:noreply, socket}
@@ -159,13 +161,20 @@ defmodule RevixWeb.PlaceNewLive do
   end
 
   @impl true
-  def handle_info({ref, {:osm_results, osm_results}}, socket) when is_reference(ref) do
+  def handle_info({ref, {:osm_results, result}}, socket) when is_reference(ref) do
     if socket.assigns.osm_search_task_ref == ref do
       Process.demonitor(ref, [:flush])
+
+      {osm_results, search_error} =
+        case result do
+          {:ok, results} -> {results, nil}
+          {:error, reason} -> {[], Places.format_nearby_search_error(reason)}
+        end
 
       {:noreply,
        socket
        |> assign(:osm_results, osm_results)
+       |> assign(:osm_search_error, search_error)
        |> assign(:osm_loading, false)
        |> assign(:osm_search_task_ref, nil)}
     else
@@ -216,13 +225,17 @@ defmodule RevixWeb.PlaceNewLive do
     end
   end
 
-  def handle_info({:DOWN, ref, :process, _pid, _reason}, socket) do
+  def handle_info({:DOWN, ref, :process, _pid, reason}, socket) do
     cond do
       socket.assigns.osm_search_task_ref == ref ->
         {:noreply,
          socket
          |> assign(:osm_loading, false)
-         |> assign(:osm_search_task_ref, nil)}
+         |> assign(:osm_search_task_ref, nil)
+         |> assign(
+           :osm_search_error,
+           "The nearby-places search failed unexpectedly (#{format_task_exit(reason)}). Please try again."
+         )}
 
       socket.assigns.osm_sync_task_ref == ref ->
         {:noreply,
@@ -257,6 +270,12 @@ defmodule RevixWeb.PlaceNewLive do
   defp parse_osm_type("way"), do: {:ok, :way}
   defp parse_osm_type("relation"), do: {:ok, :relation}
   defp parse_osm_type(_), do: :error
+
+  defp format_task_exit({exception, _stacktrace}) when is_exception(exception) do
+    Exception.message(exception)
+  end
+
+  defp format_task_exit(reason), do: inspect(reason)
 
   defp form_params(form) do
     %{

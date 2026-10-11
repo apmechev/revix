@@ -36,9 +36,20 @@
             <span class="loading loading-spinner loading-sm"></span> Searching for nearby places…
           </div>
 
-          <%!-- No results — only shown after loading completes --%>
+          <%!-- Search error — shown when the nearby-places search fails --%>
           <div
-            :if={not @place_loading and @place_searched and @place_results == []}
+            :if={@place_search_error}
+            class="mb-4 text-sm text-error"
+          >
+            {@place_search_error}
+          </div>
+
+          <%!-- No results — only shown after loading completes without an error --%>
+          <div
+            :if={
+              not @place_loading and @place_searched and @place_results == [] and
+                is_nil(@place_search_error)
+            }
             class="mb-4 text-sm text-base-content/70"
           >
             No places found nearby.

@@ -314,14 +314,42 @@ defmodule Revix.Places do
 
   @doc """
   Returns OSM places near the given coordinates. Blocks on the Overpass HTTP call.
+
+  Returns `{:ok, results}` on success or `{:error, reason}` when the Overpass
+  request fails. Use `format_nearby_search_error/1` to turn the reason into a
+  user-facing message.
   """
   def search_nearby_osm(lat, lon, accuracy) do
     radius = max(100, round(accuracy)) + 100
+    Revix.Overpass.search_nearby(lat, lon, radius)
+  end
 
-    case Revix.Overpass.search_nearby(lat, lon, radius) do
-      {:ok, results} -> results
-      {:error, _} -> []
-    end
+  @doc """
+  Formats a `search_nearby_osm/3` error reason into a user-facing message.
+  """
+  def format_nearby_search_error(reason) do
+    detail =
+      case reason do
+        {:http_error, 429} ->
+          "OpenStreetMap is rate-limiting requests (HTTP 429)"
+
+        {:http_error, 504} ->
+          "OpenStreetMap timed out (HTTP 504)"
+
+        {:http_error, status} when is_integer(status) ->
+          "OpenStreetMap returned an error (HTTP #{status})"
+
+        %Req.TransportError{reason: :timeout} ->
+          "the request to OpenStreetMap timed out"
+
+        %Req.TransportError{} ->
+          "a network error occurred reaching OpenStreetMap (#{inspect(reason)})"
+
+        other ->
+          "unexpected error (#{inspect(other)})"
+      end
+
+    "Couldn't search OpenStreetMap for nearby places: #{detail}. Please try again."
   end
 
   @doc """
