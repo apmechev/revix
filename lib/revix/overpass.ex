@@ -1,5 +1,5 @@
 defmodule Revix.Overpass do
-  @overpass_url "https://overpass-api.de/api/interpreter"
+  @default_overpass_url "https://overpass-api.de/api/interpreter"
 
   def search_nearby(lat, lon, radius)
       when is_float(lat) and is_float(lon) and is_number(radius) do
@@ -9,7 +9,7 @@ defmodule Revix.Overpass do
     opts = req_opts() |> Keyword.put(:form, data: query)
     opts = if plug, do: Keyword.put(opts, :plug, plug), else: opts
 
-    case Req.post(@overpass_url, opts) do
+    case Req.post(overpass_url(), opts) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, parse_elements(body, lat, lon)}
 
@@ -51,7 +51,7 @@ defmodule Revix.Overpass do
     opts = req_opts() |> Keyword.put(:form, data: query)
     opts = if plug, do: Keyword.put(opts, :plug, plug), else: opts
 
-    case Req.post(@overpass_url, opts) do
+    case Req.post(overpass_url(), opts) do
       {:ok, %{status: 200, body: %{"elements" => [element | _]}}} ->
         parse_single_element(element)
 
@@ -110,6 +110,10 @@ defmodule Revix.Overpass do
   defp element_coordinates(%{"center" => %{"lat" => lat, "lon" => lon}}), do: {lat, lon}
 
   defp element_coordinates(_), do: {nil, nil}
+
+  defp overpass_url do
+    Application.get_env(:revix, :overpass)[:url] || @default_overpass_url
+  end
 
   defp req_opts do
     version = Application.spec(:revix, :vsn) || "0"

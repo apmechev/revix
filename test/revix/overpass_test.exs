@@ -143,6 +143,26 @@ defmodule Revix.OverpassSearchTest do
       assert result.osm_type == :relation
       assert result.osm_id == 12345
     end
+
+    test "uses the configured Overpass URL when set" do
+      original = Application.get_env(:revix, :overpass)
+
+      Application.put_env(
+        :revix,
+        :overpass,
+        Keyword.put(original || [], :url, "http://overpass.example/api/interpreter")
+      )
+
+      on_exit(fn -> Application.put_env(:revix, :overpass, original) end)
+
+      Req.Test.stub(:overpass, fn conn ->
+        send(self(), {:overpass_request_host, conn.host})
+        Req.Test.json(conn, %{"elements" => []})
+      end)
+
+      assert {:ok, []} = Overpass.search_nearby(40.0, -105.0, 500)
+      assert_received {:overpass_request_host, "overpass.example"}
+    end
   end
 end
 
