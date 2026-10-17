@@ -121,6 +121,8 @@ end
 defmodule Revix.OverpassSearchTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias Revix.Overpass
 
   describe "search_nearby/3" do
@@ -162,6 +164,68 @@ defmodule Revix.OverpassSearchTest do
 
       assert {:ok, []} = Overpass.search_nearby(40.0, -105.0, 500)
       assert_received {:overpass_request_host, "overpass.example"}
+    end
+
+    test "logs HTTP errors with the queried instance at warning level" do
+      Req.Test.stub(:overpass, fn conn ->
+        Plug.Conn.send_resp(conn, 429, "Too Many Requests")
+      end)
+
+      log = capture_log(fn -> Overpass.search_nearby(40.0, -105.0, 500) end)
+
+      assert log =~ "Overpass search failed"
+      assert log =~ "POST https://overpass-api.de/api/interpreter"
+      assert log =~ "429"
+    end
+
+    test "logs transport errors with the queried instance at warning level" do
+      Req.Test.stub(:overpass, fn conn ->
+        Req.Test.transport_error(conn, :timeout)
+      end)
+
+      log = capture_log(fn -> Overpass.search_nearby(40.0, -105.0, 500) end)
+
+      assert log =~ "Overpass search failed"
+      assert log =~ "POST https://overpass-api.de/api/interpreter"
+      assert log =~ "timeout"
+    end
+  end
+
+  describe "log_request_result/4" do
+    test "logs slow successful requests at warning level" do
+      log =
+        capture_log(fn ->
+          Overpass.log_request_result(
+            :search,
+            "http://overpass.example/api/interpreter",
+            {:ok, %{status: 200}},
+            15_000
+          )
+        end)
+
+      assert log =~ "Overpass search was slow"
+      assert log =~ "POST http://overpass.example/api/interpreter"
+      assert log =~ "15000ms"
+    end
+
+    test "logs fast successful requests at debug level" do
+      original_level = Logger.level()
+      on_exit(fn -> Logger.configure(level: original_level) end)
+      Logger.configure(level: :debug)
+
+      log =
+        capture_log(fn ->
+          Overpass.log_request_result(
+            :fetch,
+            "http://overpass.example/api/interpreter",
+            {:ok, %{status: 200}},
+            100
+          )
+        end)
+
+      Logger.configure(level: original_level)
+
+      assert log =~ "Overpass fetch succeeded"
     end
   end
 end
