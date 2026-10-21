@@ -121,6 +121,8 @@ end
 defmodule Revix.OverpassSearchTest do
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
+
   alias Revix.Overpass
 
   describe "search_nearby/3" do
@@ -142,6 +144,122 @@ defmodule Revix.OverpassSearchTest do
       assert result.name == "Boulder County"
       assert result.osm_type == :relation
       assert result.osm_id == 12345
+    end
+
+    test "uses the configured Overpass URL when set" do
+      original = Application.get_env(:revix, :overpass)
+
+      Application.put_env(
+        :revix,
+        :overpass,
+        Keyword.put(original || [], :url, "http://overpass.example/api/interpreter")
+      )
+
+      on_exit(fn -> Application.put_env(:revix, :overpass, original) end)
+
+      Req.Test.stub(:overpass, fn conn ->
+        send(self(), {:overpass_request_host, conn.host})
+        Req.Test.json(conn, %{"elements" => []})
+      end)
+
+      assert {:ok, []} = Overpass.search_nearby(40.0, -105.0, 500)
+      assert_received {:overpass_request_host, "overpass.example"}
+    end
+
+    test "logs HTTP errors with the queried instance at warning level" do
+      Req.Test.stub(:overpass, fn conn ->
+        Plug.Conn.send_resp(conn, 429, "Too Many Requests")
+      end)
+
+      log = capture_log(fn -> Overpass.search_nearby(40.0, -105.0, 500) end)
+
+      assert log =~ "Overpass search failed"
+      assert log =~ "POST https://overpass-api.de/api/interpreter"
+      assert log =~ "429"
+    end
+
+    test "logs transport errors with the queried instance at warning level" do
+      Req.Test.stub(:overpass, fn conn ->
+        Req.Test.transport_error(conn, :timeout)
+      end)
+
+      log = capture_log(fn -> Overpass.search_nearby(40.0, -105.0, 500) end)
+
+      assert log =~ "Overpass search failed"
+      assert log =~ "POST https://overpass-api.de/api/interpreter"
+      assert log =~ "timeout"
+    end
+
+    test "sends the configured bearer token as an Authorization header" do
+      original = Application.get_env(:revix, :overpass)
+
+      Application.put_env(
+        :revix,
+        :overpass,
+        Keyword.put(original || [], :bearer_token, "secret-token-123")
+      )
+
+      on_exit(fn -> Application.put_env(:revix, :overpass, original) end)
+
+      Req.Test.stub(:overpass, fn conn ->
+        send(self(), {:overpass_headers, conn.req_headers})
+        Req.Test.json(conn, %{"elements" => []})
+      end)
+
+      assert {:ok, []} = Overpass.search_nearby(40.0, -105.0, 500)
+
+      assert_received {:overpass_headers, headers}
+      assert {"authorization", "Bearer secret-token-123"} in headers
+    end
+
+    test "does not send an Authorization header when no token is configured" do
+      Req.Test.stub(:overpass, fn conn ->
+        send(self(), {:overpass_headers, conn.req_headers})
+        Req.Test.json(conn, %{"elements" => []})
+      end)
+
+      assert {:ok, []} = Overpass.search_nearby(40.0, -105.0, 500)
+
+      assert_received {:overpass_headers, headers}
+      refute Enum.any?(headers, &(elem(&1, 0) == "authorization"))
+    end
+  end
+
+  describe "log_request_result/4" do
+    test "logs slow successful requests at warning level" do
+      log =
+        capture_log(fn ->
+          Overpass.log_request_result(
+            :search,
+            "http://overpass.example/api/interpreter",
+            {:ok, %{status: 200}},
+            15_000
+          )
+        end)
+
+      assert log =~ "Overpass search was slow"
+      assert log =~ "POST http://overpass.example/api/interpreter"
+      assert log =~ "15000ms"
+    end
+
+    test "logs fast successful requests at debug level" do
+      original_level = Logger.level()
+      on_exit(fn -> Logger.configure(level: original_level) end)
+      Logger.configure(level: :debug)
+
+      log =
+        capture_log(fn ->
+          Overpass.log_request_result(
+            :fetch,
+            "http://overpass.example/api/interpreter",
+            {:ok, %{status: 200}},
+            100
+          )
+        end)
+
+      Logger.configure(level: original_level)
+
+      assert log =~ "Overpass fetch succeeded"
     end
   end
 end

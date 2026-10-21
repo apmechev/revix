@@ -22,6 +22,13 @@ end
 
 config :revix, RevixWeb.Endpoint, http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Overpass API endpoint used for nearby-places searches. Point at a mirror
+# (e.g. https://overpass.kumi.systems/api/interpreter) when the main instance
+# is slow or rate-limited.
+config :revix, :overpass,
+  url: System.get_env("OVERPASS_URL") || "https://overpass-api.de/api/interpreter",
+  bearer_token: System.get_env("OVERPASS_BEARER_TOKEN")
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

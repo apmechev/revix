@@ -12,6 +12,10 @@ DOCKER_TAG=latest
 REVIX_HOST=revix.example.com
 PHX_SERVER=true
 REVIX_PORT=4000          # bound to 127.0.0.1 on the host
+OVERPASS_URL=            # custom Overpass endpoint (e.g., https://overpass.kumi.systems/api/interpreter).
+                         # Leave empty to use https://overpass-api.de/api/interpreter.
+OVERPASS_BEARER_TOKEN=   # optional bearer token for Overpass endpoints that require auth.
+                         # Leave empty when the endpoint is public.
 
 # Secrets — generate each with the command in the comment
 SECRET_KEY_BASE=         # mix phx.gen.secret
