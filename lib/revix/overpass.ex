@@ -1,5 +1,8 @@
 defmodule Revix.Overpass do
+  require Logger
+
   @default_overpass_url "https://overpass-api.de/api/interpreter"
+  @slow_request_ms 10_000
 
   def search_nearby(lat, lon, radius)
       when is_float(lat) and is_float(lon) and is_number(radius) do
@@ -9,7 +12,7 @@ defmodule Revix.Overpass do
     opts = req_opts() |> Keyword.put(:form, data: query)
     opts = if plug, do: Keyword.put(opts, :plug, plug), else: opts
 
-    case Req.post(overpass_url(), opts) do
+    case post(:search, opts) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, parse_elements(body, lat, lon)}
 
@@ -51,7 +54,7 @@ defmodule Revix.Overpass do
     opts = req_opts() |> Keyword.put(:form, data: query)
     opts = if plug, do: Keyword.put(opts, :plug, plug), else: opts
 
-    case Req.post(overpass_url(), opts) do
+    case post(:fetch, opts) do
       {:ok, %{status: 200, body: %{"elements" => [element | _]}}} ->
         parse_single_element(element)
 
@@ -111,6 +114,48 @@ defmodule Revix.Overpass do
 
   defp element_coordinates(_), do: {nil, nil}
 
+  # Posts to the configured Overpass endpoint, logging the queried instance
+  # and outcome: failures and slow requests at :warning, successes at :debug.
+  defp post(action, opts) do
+    url = overpass_url()
+    {micros, result} = :timer.tc(fn -> Req.post(url, opts) end)
+    log_request_result(action, url, result, div(micros, 1000))
+    result
+  end
+
+  @doc """
+  Logs the outcome of an Overpass request, including the queried instance.
+
+  Failures and requests slower than `#{@slow_request_ms}ms` are logged at
+  `:warning`; other successful requests at `:debug`.
+  """
+  def log_request_result(action, url, result, elapsed_ms) do
+    case result do
+      {:ok, %{status: 200}} when elapsed_ms > @slow_request_ms ->
+        Logger.warning("Overpass #{action} was slow: POST #{url} -> 200 in #{elapsed_ms}ms")
+
+      {:ok, %{status: 200}} ->
+        Logger.debug("Overpass #{action} succeeded: POST #{url} -> 200 in #{elapsed_ms}ms")
+
+      {:ok, %{status: status}} ->
+        Logger.warning(
+          "Overpass #{action} failed: POST #{url} -> HTTP #{status} (#{elapsed_ms}ms)"
+        )
+
+      {:error, reason} when is_exception(reason) ->
+        Logger.warning(
+          "Overpass #{action} failed: POST #{url} -> #{Exception.message(reason)} (#{elapsed_ms}ms)"
+        )
+
+      {:error, reason} ->
+        Logger.warning(
+          "Overpass #{action} failed: POST #{url} -> #{inspect(reason)} (#{elapsed_ms}ms)"
+        )
+    end
+
+    :ok
+  end
+
   defp overpass_url do
     Application.get_env(:revix, :overpass)[:url] || @default_overpass_url
   end
@@ -119,9 +164,17 @@ defmodule Revix.Overpass do
     version = Application.spec(:revix, :vsn) || "0"
     contact = Application.get_env(:revix, :overpass)[:contact_url] || ""
 
+    headers = [{"user-agent", "revix/#{version} (#{contact})"}]
+
+    headers =
+      case Application.get_env(:revix, :overpass)[:bearer_token] do
+        nil -> headers
+        token -> [{"authorization", "Bearer #{token}"} | headers]
+      end
+
     [
       receive_timeout: 30_000,
-      headers: [{"user-agent", "revix/#{version} (#{contact})"}]
+      headers: headers
     ]
   end
 

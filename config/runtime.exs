@@ -26,7 +26,8 @@ config :revix, RevixWeb.Endpoint, http: [port: String.to_integer(System.get_env(
 # (e.g. https://overpass.kumi.systems/api/interpreter) when the main instance
 # is slow or rate-limited.
 config :revix, :overpass,
-  url: System.get_env("OVERPASS_URL") || "https://overpass-api.de/api/interpreter"
+  url: System.get_env("OVERPASS_URL") || "https://overpass-api.de/api/interpreter",
+  bearer_token: System.get_env("OVERPASS_BEARER_TOKEN")
 
 if config_env() == :prod do
   database_url =
