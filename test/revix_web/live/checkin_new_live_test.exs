@@ -47,6 +47,21 @@ defmodule RevixWeb.CheckinNewLiveTest do
       assert html =~ "Companions"
       assert html =~ "Photos"
     end
+
+    test "auto-locate is off by default", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/checkins/new")
+      assert html =~ ~s(data-auto-locate="false")
+    end
+
+    test "auto-locate data attribute reflects the person's preference", %{
+      conn: conn,
+      person: person
+    } do
+      {:ok, _person} = People.update_checkin_preferences(person, %{auto_locate_on_checkin: true})
+
+      {:ok, _view, html} = live(conn, ~p"/checkins/new")
+      assert html =~ ~s(data-auto-locate="true")
+    end
   end
 
   # ── Owner vs Non-owner ──────────────────────────────────────────────────────
