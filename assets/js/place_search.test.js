@@ -266,7 +266,7 @@ describe("PlaceSearch hook — auto-locate (data-auto-locate=\"true\")", () => {
     expect(form.querySelector("#locate-status").textContent).toBe("Locating...")
   })
 
-  it("shows Located status on success but does not push the locate event", () => {
+  it("pushes auto_locate with the coordinates but not the locate event", () => {
     geolocationMock.getCurrentPosition.mockImplementation((success) => {
       success({ coords: { latitude: 40.0, longitude: -105.0, accuracy: 25.0 } })
     })
@@ -275,9 +275,10 @@ describe("PlaceSearch hook — auto-locate (data-auto-locate=\"true\")", () => {
     const hook = mountHook(form)
 
     expect(form.querySelector("#locate-status").textContent).toBe("Located (±25m)")
-    // Only set_defaults is pushed — the search waits for the button press
-    const events = hook.pushEvent.mock.calls.map(([name]) => name)
-    expect(events).toEqual(["set_defaults"])
+    // The local DB search fires on mount, but not the OpenStreetMap search
+    expect(hook.pushEvent).toHaveBeenCalledWith("auto_locate", {
+      lat: 40.0, lon: -105.0, accuracy: 25.0
+    })
     expect(hook.pushEvent).not.toHaveBeenCalledWith("locate", expect.anything())
   })
 

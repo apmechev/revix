@@ -10,9 +10,11 @@
  * When the hook element carries data-auto-locate="true" (driven by the
  * person's "Auto-locate on checkin" preference), geolocation runs
  * automatically on mount and the coordinates are cached client-side. The
- * "locate" event — which triggers the nearby-places search on the server —
- * is only pushed when the user presses "Locate me", reusing the cached
- * coordinates so the search starts immediately.
+ * "auto_locate" event — which searches the local Revix database for nearby
+ * places — is pushed right away, while the "locate" event — which also
+ * searches OpenStreetMap — is only pushed when the user presses
+ * "Locate me", reusing the cached coordinates so the search starts
+ * immediately.
  */
 export function createPlaceSearchHook() {
   return {
@@ -76,15 +78,17 @@ export function createPlaceSearchHook() {
       })
 
       if (this.el.dataset.autoLocate === "true") {
-        // Auto-locate: detect the position now, but don't search — the
-        // server-side search only runs when "Locate me" is pressed.
+        // Auto-locate: detect the position now and search the local Revix
+        // database for nearby places. OpenStreetMap is only searched when
+        // "Locate me" is pressed.
         if (!navigator.geolocation) {
           locateStatus.textContent = "Geolocation not supported"
         } else {
           locateStatus.textContent = "Locating..."
           requestPosition({
-            onSuccess: ({accuracy}) => {
+            onSuccess: ({latitude, longitude, accuracy}) => {
               locateStatus.textContent = `Located (±${Math.round(accuracy)}m)`
+              this.pushEvent("auto_locate", {lat: latitude, lon: longitude, accuracy})
             }
           })
         }
