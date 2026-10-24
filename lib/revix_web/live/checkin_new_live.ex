@@ -31,6 +31,7 @@ defmodule RevixWeb.CheckinNewLive do
       |> assign(:timezones, Tzdata.zone_list() |> Enum.sort())
       |> assign(:can_create_place, scope.role in [:owner, :contributor])
       |> assign(:can_edit_place_coords, scope.role == :owner)
+      |> assign(:auto_locate, scope.person.auto_locate_on_checkin)
       |> assign(:upload_captions, %{})
       |> assign(:upload_order, [])
       |> assign(:show_publish_modal, false)
