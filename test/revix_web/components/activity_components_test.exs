@@ -375,6 +375,28 @@ defmodule RevixWeb.ActivityComponentsTest do
     end
   end
 
+  describe "place_result_name/1" do
+    test "shows the preferred name first with the local name in parentheses" do
+      html =
+        render_component(&ActivityComponents.place_result_name/1,
+          place: %{name: "Staroměstské náměstí", preferred_name: "Old Town Square"}
+        )
+
+      assert html =~
+               ~r|<span class="font-medium">Old Town Square</span>\s*<span class="text-base-content/60">\(Staroměstské náměstí\)</span>|
+    end
+
+    test "shows only the name when there is no preferred name" do
+      html =
+        render_component(&ActivityComponents.place_result_name/1,
+          place: %{name: "Corner Cafe", preferred_name: nil}
+        )
+
+      assert html =~ ~s(<span class="font-medium">Corner Cafe</span>)
+      refute html =~ "("
+    end
+  end
+
   describe "avatar_image/1" do
     test "renders a 64x64 img with the person's avatar" do
       person = person_fixture()

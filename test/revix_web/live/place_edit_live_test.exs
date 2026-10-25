@@ -1,6 +1,7 @@
 defmodule RevixWeb.PlaceEditLiveTest do
   use RevixWeb.ConnCase, async: false
 
+  import ExUnit.CaptureLog
   import Phoenix.LiveViewTest
   import Revix.PlacesFixtures
 
@@ -487,6 +488,7 @@ defmodule RevixWeb.PlaceEditLiveTest do
       assert html =~ "OSM element not found"
     end
 
+    @tag :capture_log
     test "shows inline error on HTTP error", %{conn: conn, place: place} do
       Req.Test.stub(:overpass, fn conn ->
         conn
@@ -586,6 +588,26 @@ defmodule RevixWeb.PlaceEditLiveTest do
       render_click(view, "sync_osm")
       html_done = wait_for_osm_sync(view)
       assert html_done =~ "Nearby Cafe"
+    end
+
+    test "logs abnormal task exits but not normal ones", %{conn: conn, place: place} do
+      {:ok, view, _html} = live(conn, ~p"/places/#{place.id}/edit")
+
+      log =
+        capture_log(fn ->
+          send(view.pid, {:DOWN, make_ref(), :process, self(), :boom})
+          render(view)
+        end)
+
+      assert log =~ "task exited: :boom"
+
+      log =
+        capture_log(fn ->
+          send(view.pid, {:DOWN, make_ref(), :process, self(), :normal})
+          render(view)
+        end)
+
+      refute log =~ "task exited"
     end
   end
 

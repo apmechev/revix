@@ -1,6 +1,8 @@
 defmodule RevixWeb.CheckinNewLive do
   use RevixWeb, :live_view
 
+  require Logger
+
   import RevixWeb.Live.EntryHelpers
 
   alias Revix.Entries
@@ -351,7 +353,9 @@ defmodule RevixWeb.CheckinNewLive do
     end
   end
 
-  def handle_info({:DOWN, ref, :process, _pid, _reason}, socket) do
+  def handle_info({:DOWN, ref, :process, _pid, reason}, socket) do
+    log_task_exit(reason)
+
     if socket.assigns.place_task_ref == ref do
       {:noreply,
        socket
@@ -360,6 +364,12 @@ defmodule RevixWeb.CheckinNewLive do
     else
       {:noreply, socket}
     end
+  end
+
+  defp log_task_exit(:normal), do: :ok
+
+  defp log_task_exit(reason) do
+    Logger.warning("[#{inspect(__MODULE__)}] task exited: #{inspect(reason)}")
   end
 
   attr :changeset, Ecto.Changeset, required: true

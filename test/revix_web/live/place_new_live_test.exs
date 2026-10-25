@@ -1,6 +1,7 @@
 defmodule RevixWeb.PlaceNewLiveTest do
   use RevixWeb.ConnCase, async: false
 
+  import ExUnit.CaptureLog
   import Phoenix.LiveViewTest
   import Revix.PeopleFixtures
 
@@ -309,6 +310,7 @@ defmodule RevixWeb.PlaceNewLiveTest do
       assert html =~ "OSM element not found"
     end
 
+    @tag :capture_log
     test "shows inline error on HTTP failure", %{conn: conn} do
       Req.Test.stub(:overpass, fn conn ->
         Req.Test.transport_error(conn, :timeout)
@@ -350,6 +352,7 @@ defmodule RevixWeb.PlaceNewLiveTest do
       :ok
     end
 
+    @tag :capture_log
     test "clears osm_sync_loading and shows error on unexpected task crash", %{conn: conn} do
       Req.Test.stub(:overpass, fn conn ->
         Req.Test.transport_error(conn, :timeout)
@@ -400,6 +403,26 @@ defmodule RevixWeb.PlaceNewLiveTest do
 
       html_done = wait_for_text(view, "Nearby Cafe")
       assert html_done =~ "Nearby Cafe"
+    end
+
+    test "logs abnormal task exits but not normal ones", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/places/new")
+
+      log =
+        capture_log(fn ->
+          send(view.pid, {:DOWN, make_ref(), :process, self(), :boom})
+          render(view)
+        end)
+
+      assert log =~ "task exited: :boom"
+
+      log =
+        capture_log(fn ->
+          send(view.pid, {:DOWN, make_ref(), :process, self(), :normal})
+          render(view)
+        end)
+
+      refute log =~ "task exited"
     end
   end
 

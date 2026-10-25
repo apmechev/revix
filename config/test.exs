@@ -44,6 +44,7 @@ config :phoenix_live_view,
 
 # Stub Overpass HTTP calls in tests via Req.Test
 config :revix, :overpass_req_plug, {Req.Test, :overpass}
+config :revix, :overpass, retry_delay: 0
 
 # Stub federation HTTP calls in tests via Req.Test
 config :revix, :federation_req_plug, {Req.Test, :federation}

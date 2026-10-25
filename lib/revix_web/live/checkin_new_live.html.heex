@@ -79,7 +79,7 @@
                   phx-click="select_place"
                   phx-value-index={index}
                 >
-                  <span class="font-medium">{result.name}</span>
+                  <.place_result_name place={result} />
                   <span class="text-base-content/60 ml-2">— {round(result.distance)}m</span>
                   <%= if result.source == :osm do %>
                     <span class="badge badge-sm badge-ghost ml-1">OSM</span>
@@ -115,7 +115,7 @@
             class="mt-2 p-3 bg-success/10 border border-success/30 rounded text-sm"
           >
             <.icon name="hero-check-circle" class="w-4 h-4 text-success inline mr-1" /> Selected:
-            <strong>{@selected_place.name}</strong>
+            <strong><.place_result_name place={@selected_place} /></strong>
           </div>
         </div>
 

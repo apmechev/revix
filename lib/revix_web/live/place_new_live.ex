@@ -1,6 +1,8 @@
 defmodule RevixWeb.PlaceNewLive do
   use RevixWeb, :live_view
 
+  require Logger
+
   alias Revix.Overpass
   alias Revix.Places
   alias Revix.Places.Place
@@ -216,7 +218,9 @@ defmodule RevixWeb.PlaceNewLive do
     end
   end
 
-  def handle_info({:DOWN, ref, :process, _pid, _reason}, socket) do
+  def handle_info({:DOWN, ref, :process, _pid, reason}, socket) do
+    log_task_exit(reason)
+
     cond do
       socket.assigns.osm_search_task_ref == ref ->
         {:noreply,
@@ -234,6 +238,12 @@ defmodule RevixWeb.PlaceNewLive do
       true ->
         {:noreply, socket}
     end
+  end
+
+  defp log_task_exit(:normal), do: :ok
+
+  defp log_task_exit(reason) do
+    Logger.warning("[#{inspect(__MODULE__)}] task exited: #{inspect(reason)}")
   end
 
   defp parse_float(""), do: nil
