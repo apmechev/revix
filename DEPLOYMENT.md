@@ -27,6 +27,9 @@ AWS_SECRET_ACCESS_KEY=
 AWS_S3_REGION=
 AWS_S3_BUCKET=           # media uploads
 AWS_S3_DUMP_BUCKET=      # database backups
+
+# Overpass (optional)
+OVERPASS_API_URL=        # Overpass API base, default https://overpass-api.de/api
 ```
 
 Create a `docker-compose.yml`:

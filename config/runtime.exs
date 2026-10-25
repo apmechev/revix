@@ -22,6 +22,12 @@ end
 
 config :revix, RevixWeb.Endpoint, http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# Overpass API base URL (e.g. a keyed provider); `/interpreter` is appended
+# and trailing slashes are ignored. Defaults to https://overpass-api.de/api.
+if overpass_api_url = System.get_env("OVERPASS_API_URL") do
+  config :revix, :overpass, api_url: overpass_api_url
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
