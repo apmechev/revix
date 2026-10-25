@@ -1,7 +1,7 @@
 defmodule Revix.Overpass do
   require Logger
 
-  @overpass_url "https://overpass-api.de/api/interpreter"
+  @default_api_url "https://overpass-api.de/api"
   @query_settings "[out:json][timeout:15][maxsize:67108864];"
   @log_excerpt_length 500
 
@@ -55,12 +55,28 @@ defmodule Revix.Overpass do
     opts = if plug, do: Keyword.put(opts, :plug, plug), else: opts
 
     started = System.monotonic_time(:millisecond)
-    response = Req.post(@overpass_url, opts)
+    response = Req.post(interpreter_url(), opts)
     elapsed = System.monotonic_time(:millisecond) - started
 
     log_response(response, "[overpass] #{inspect(kind)}", elapsed)
     handle_response(response)
   end
+
+  defp interpreter_url do
+    Application.get_env(:revix, :overpass, [])[:api_url]
+    |> api_base()
+    |> String.trim_trailing("/")
+    |> with_interpreter_path()
+  end
+
+  defp api_base(nil), do: @default_api_url
+  defp api_base(url), do: url |> String.trim() |> blank_to_default()
+
+  defp blank_to_default(""), do: @default_api_url
+  defp blank_to_default(url), do: url
+
+  defp with_interpreter_path(url),
+    do: String.replace_suffix(url, "/interpreter", "") <> "/interpreter"
 
   defp handle_response({:ok, %{status: 200, body: %{"remark" => remark, "elements" => []}}}),
     do: {:error, {:overpass_remark, remark}}

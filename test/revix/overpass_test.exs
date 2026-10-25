@@ -632,6 +632,91 @@ defmodule Revix.OverpassFetchTest do
     end)
   end
 
+  describe "API endpoint" do
+    setup do
+      original = Application.get_env(:revix, :overpass)
+      on_exit(fn -> Application.put_env(:revix, :overpass, original) end)
+      %{original: original}
+    end
+
+    test "defaults to the public overpass-api.de interpreter", %{original: original} do
+      Application.put_env(:revix, :overpass, Keyword.delete(original, :api_url))
+
+      assert request_target() == {:https, "overpass-api.de", "/api/interpreter"}
+    end
+
+    test "appends /interpreter to a configured base URL", %{original: original} do
+      put_api_url(original, "https://api.overpass.ch/v1/KEY")
+
+      assert request_target() == {:https, "api.overpass.ch", "/v1/KEY/interpreter"}
+    end
+
+    test "ignores trailing slashes on the base URL", %{original: original} do
+      for url <- ["https://api.overpass.ch/v1/KEY/", "https://api.overpass.ch/v1/KEY//"] do
+        put_api_url(original, url)
+
+        assert request_target() == {:https, "api.overpass.ch", "/v1/KEY/interpreter"}
+      end
+    end
+
+    test "falls back to the default for a blank base URL", %{original: original} do
+      for url <- ["", "   "] do
+        put_api_url(original, url)
+
+        assert request_target() == {:https, "overpass-api.de", "/api/interpreter"}
+      end
+    end
+
+    test "trims surrounding whitespace from the base URL", %{original: original} do
+      put_api_url(original, "  https://api.overpass.ch/v1/KEY/  ")
+
+      assert request_target() == {:https, "api.overpass.ch", "/v1/KEY/interpreter"}
+    end
+
+    test "does not double an /interpreter suffix", %{original: original} do
+      for url <- [
+            "https://api.overpass.ch/v1/KEY/interpreter",
+            "https://api.overpass.ch/v1/KEY/interpreter/"
+          ] do
+        put_api_url(original, url)
+
+        assert request_target() == {:https, "api.overpass.ch", "/v1/KEY/interpreter"}
+      end
+    end
+
+    test "never logs the API key", %{original: original} do
+      put_api_url(original, "https://api.overpass.ch/v1/SECRETKEY")
+
+      Req.Test.stub(:overpass, fn conn -> Plug.Conn.send_resp(conn, 500, "Server Error") end)
+      http_log = capture_log(fn -> Overpass.fetch_element(:node, 123) end)
+
+      Req.Test.stub(:overpass, fn conn -> Req.Test.transport_error(conn, :econnrefused) end)
+      transport_log = capture_log(fn -> Overpass.search_nearby(40.0, -105.0, 500) end)
+
+      assert http_log =~ "[overpass]"
+      assert transport_log =~ "[overpass]"
+      refute http_log =~ "SECRETKEY"
+      refute transport_log =~ "SECRETKEY"
+    end
+  end
+
+  defp put_api_url(original, url) do
+    Application.put_env(:revix, :overpass, Keyword.put(original, :api_url, url))
+  end
+
+  defp request_target do
+    test_pid = self()
+
+    Req.Test.stub(:overpass, fn conn ->
+      send(test_pid, {:target, {conn.scheme, conn.host, conn.request_path}})
+      Req.Test.json(conn, %{"elements" => []})
+    end)
+
+    Overpass.fetch_element(:node, 1)
+    assert_received {:target, target}
+    target
+  end
+
   defp respond_after_transient(conn, 1), do: Plug.Conn.send_resp(conn, 504, "Gateway Timeout")
 
   defp respond_after_transient(conn, _attempt) do
