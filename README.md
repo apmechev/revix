@@ -9,7 +9,7 @@ A personal location journal with ActivityPub federation. Check in to places, wri
 
 - **Check-ins and notes** — record visits to places with optional notes and companions
 - **Posts** — standalone entries not tied to a place, for freeform writing
-- **Places** — backed by a local PostGIS database with live search via the OpenStreetMap Overpass API
+- **Places** — backed by a local PostGIS database with live search via the OpenStreetMap Overpass API; results lead with a place's English (or `int_name`) name when it differs from the local one (language configurable)
 - **Activity feeds** — site-wide Atom 1.0 and RSS 2.0 feeds of public check-ins, posts, and likes, plus a per-person Atom and RSS feed linked from every profile
 - **Sitemap** — XML sitemap of public places, posts, and profiles
 - **Likes and comments** — like any check-in; leave short notes as comments

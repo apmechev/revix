@@ -1,70 +1,107 @@
 defmodule Revix.Overpass do
+  require Logger
+
   @overpass_url "https://overpass-api.de/api/interpreter"
+  @query_settings "[out:json][timeout:15][maxsize:67108864];"
+  @log_excerpt_length 500
 
   def search_nearby(lat, lon, radius)
       when is_float(lat) and is_float(lon) and is_number(radius) do
-    query = build_query(lat, lon, radius)
-
-    plug = Application.get_env(:revix, :overpass_req_plug)
-    opts = req_opts() |> Keyword.put(:form, data: query)
-    opts = if plug, do: Keyword.put(opts, :plug, plug), else: opts
-
-    case Req.post(@overpass_url, opts) do
-      {:ok, %{status: 200, body: body}} ->
-        {:ok, parse_elements(body, lat, lon)}
-
-      {:ok, %{status: status}} ->
-        {:error, {:http_error, status}}
-
-      {:error, reason} ->
-        {:error, reason}
+    with {:ok, body} <- post_query(:search_nearby, build_query(lat, lon, radius)) do
+      {:ok, parse_elements(body, lat, lon)}
     end
   end
 
   defp build_query(lat, lon, radius) do
-    around = "around:#{radius},#{lat},#{lon}"
-
     """
-    [out:json][timeout:25];
+    #{@query_settings}
+    nwr(around:#{radius},#{lat},#{lon})[name]->.named;
     (
-      nwr(#{around})[name][~"^(tourism|amenity|historic|leisure|shop)$"~"."];
-      nwr(#{around})[name][aeroway=aerodrome];
-      nwr(#{around})[name][railway=station];
-      node(#{around})[name][highway=bus_stop];
-      node(#{around})[name][railway=tram_stop];
+      nwr.named[tourism];
+      nwr.named[amenity];
+      nwr.named[historic];
+      nwr.named[leisure];
+      nwr.named[shop];
+      nwr.named[aeroway=aerodrome];
+      nwr.named[railway=station];
+      node.named[highway=bus_stop];
+      node.named[railway=tram_stop];
       is_in(#{lat},#{lon})->.containing;
-      wr(pivot.containing)[name][admin_level];
+      rel(pivot.containing)[name][boundary=administrative][admin_level~"^([6-9]|10)$"];
     );
-    out center;
+    out tags center;
     """
   end
 
   def fetch_element(osm_type, osm_id)
       when osm_type in [:node, :way, :relation] and is_integer(osm_id) do
     query = """
-    [out:json][timeout:25];
+    #{@query_settings}
     #{osm_type}(#{osm_id});
-    out center;
+    out tags center;
     """
 
+    with {:ok, body} <- post_query({:fetch, osm_type, osm_id}, query) do
+      first_element(body)
+    end
+  end
+
+  defp first_element(%{"elements" => [element | _]}), do: parse_single_element(element)
+  defp first_element(_), do: {:error, :not_found}
+
+  defp post_query(kind, query) do
     plug = Application.get_env(:revix, :overpass_req_plug)
     opts = req_opts() |> Keyword.put(:form, data: query)
     opts = if plug, do: Keyword.put(opts, :plug, plug), else: opts
 
-    case Req.post(@overpass_url, opts) do
-      {:ok, %{status: 200, body: %{"elements" => [element | _]}}} ->
-        parse_single_element(element)
+    started = System.monotonic_time(:millisecond)
+    response = Req.post(@overpass_url, opts)
+    elapsed = System.monotonic_time(:millisecond) - started
 
-      {:ok, %{status: 200, body: %{"elements" => []}}} ->
-        {:error, :not_found}
-
-      {:ok, %{status: status}} ->
-        {:error, {:http_error, status}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+    log_response(response, "[overpass] #{inspect(kind)}", elapsed)
+    handle_response(response)
   end
+
+  defp handle_response({:ok, %{status: 200, body: %{"remark" => remark, "elements" => []}}}),
+    do: {:error, {:overpass_remark, remark}}
+
+  defp handle_response({:ok, %{status: 200, body: %{"elements" => _} = body}}), do: {:ok, body}
+  defp handle_response({:ok, %{status: 200}}), do: {:error, :unexpected_body}
+  defp handle_response({:ok, %{status: status}}), do: {:error, {:http_error, status}}
+  defp handle_response({:error, reason}), do: {:error, reason}
+
+  defp log_response({:ok, %{status: 200, body: %{"remark" => remark}}}, prefix, ms) do
+    Logger.warning("#{prefix} remark (#{ms}ms): #{remark}")
+  end
+
+  defp log_response({:ok, %{status: 200, body: %{"elements" => elements}}}, prefix, ms) do
+    Logger.debug("#{prefix} #{length(elements)} elements (#{ms}ms)")
+  end
+
+  defp log_response({:ok, %{status: 200, body: body}}, prefix, ms) do
+    Logger.warning("#{prefix} unexpected body (#{ms}ms): #{excerpt(body)}")
+  end
+
+  defp log_response({:ok, %{status: status, body: body} = response}, prefix, ms) do
+    retry_after = Req.Response.get_header(response, "retry-after")
+
+    Logger.warning(
+      "#{prefix} HTTP #{status} (#{ms}ms)#{retry_after_note(retry_after)}: #{excerpt(body)}"
+    )
+  end
+
+  defp log_response({:error, reason}, prefix, ms) do
+    Logger.warning("#{prefix} transport error (#{ms}ms): #{inspect(reason)}")
+  end
+
+  defp retry_after_note([]), do: ""
+  defp retry_after_note([value | _]), do: " retry-after=#{value}"
+
+  defp excerpt(body) when is_binary(body) do
+    body |> String.replace(~r/\s+/, " ") |> String.slice(0, @log_excerpt_length)
+  end
+
+  defp excerpt(body), do: body |> inspect() |> excerpt()
 
   defp parse_single_element(element) do
     name = get_in(element, ["tags", "name"])
@@ -96,6 +133,7 @@ defmodule Revix.Overpass do
         source: :osm,
         id: nil,
         name: name,
+        preferred_name: preferred_name(el["tags"], name),
         lat: lat,
         lon: lon,
         distance: haversine(origin_lat, origin_lon, lat, lon),
@@ -105,6 +143,17 @@ defmodule Revix.Overpass do
     end
   end
 
+  defp preferred_name(tags, name) do
+    tags
+    |> Map.get("name:#{name_language()}", tags["int_name"])
+    |> distinct_name(name)
+  end
+
+  defp distinct_name(name, name), do: nil
+  defp distinct_name(alternate, _name), do: alternate
+
+  defp name_language, do: Application.get_env(:revix, :overpass, [])[:name_language] || "en"
+
   defp element_coordinates(%{"type" => "node", "lat" => lat, "lon" => lon}), do: {lat, lon}
 
   defp element_coordinates(%{"center" => %{"lat" => lat, "lon" => lon}}), do: {lat, lon}
@@ -113,13 +162,20 @@ defmodule Revix.Overpass do
 
   defp req_opts do
     version = Application.spec(:revix, :vsn) || "0"
-    contact = Application.get_env(:revix, :overpass)[:contact_url] || ""
+    config = Application.get_env(:revix, :overpass, [])
+    contact = config[:contact_url] || ""
 
     [
-      receive_timeout: 30_000,
+      receive_timeout: 20_000,
+      retry: :transient,
+      max_retries: 2,
       headers: [{"user-agent", "revix/#{version} (#{contact})"}]
     ]
+    |> put_retry_delay(config[:retry_delay])
   end
+
+  defp put_retry_delay(opts, nil), do: opts
+  defp put_retry_delay(opts, delay), do: Keyword.put(opts, :retry_delay, fn _ -> delay end)
 
   defp haversine(lat1, lon1, lat2, lon2) do
     r = 6_371_000

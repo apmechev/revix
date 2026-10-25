@@ -1,6 +1,7 @@
 defmodule RevixWeb.CheckinNewLiveTest do
   use RevixWeb.ConnCase, async: false
 
+  import ExUnit.CaptureLog
   import Phoenix.LiveViewTest
   import Revix.PlacesFixtures
   import Revix.PeopleFixtures
@@ -181,6 +182,48 @@ defmodule RevixWeb.CheckinNewLiveTest do
       refute html =~ "loading-spinner"
     end
 
+    test "OSM result with an English name shows it first and saves the local name", %{
+      conn: conn,
+      person: person
+    } do
+      People.set_person_role(person, :owner)
+
+      Req.Test.stub(:overpass, fn conn ->
+        Req.Test.json(conn, %{
+          "elements" => [
+            %{
+              "type" => "node",
+              "id" => 77,
+              "lat" => 40.001,
+              "lon" => -105.001,
+              "tags" => %{"name" => "Staroměstské náměstí", "name:en" => "Old Town Square"}
+            }
+          ]
+        })
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/checkins/new")
+      Req.Test.allow(:overpass, self(), view.pid)
+      render_hook(view, "locate", %{lat: 40.0, lon: -105.0, accuracy: 100.0})
+      html = wait_for_place_search(view)
+
+      assert html =~
+               ~r|Old Town Square</span>\s*<span class="text-base-content/60">\(Staroměstské náměstí\)|
+
+      html = render_click(view, "select_place", %{"index" => "0"})
+      assert html =~ ~r|Selected:\s*<strong>\s*<span class="font-medium">Old Town Square</span>|
+
+      view
+      |> form("#checkin-form",
+        checkin: %{starts_at_local: "2026-02-26T10:00", starts_tz: "America/New_York"}
+      )
+      |> render_submit(%{action: "publish"})
+
+      {:error, {:redirect, %{to: _path}}} = render_click(view, "confirm_publish", %{})
+
+      assert %{name: "Staroměstské náměstí"} = Revix.Places.get_local_place_by_osm(:node, 77)
+    end
+
     test "OSM returns empty — shows no-results message after loading", %{conn: conn} do
       Req.Test.stub(:overpass, fn conn ->
         Req.Test.json(conn, %{"elements" => []})
@@ -195,6 +238,7 @@ defmodule RevixWeb.CheckinNewLiveTest do
       refute html =~ "loading-spinner"
     end
 
+    @tag :capture_log
     test "OSM returns HTTP error — DB results still shown, spinner gone", %{conn: conn} do
       place =
         place_fixture(%{
@@ -215,6 +259,7 @@ defmodule RevixWeb.CheckinNewLiveTest do
       refute html =~ "loading-spinner"
     end
 
+    @tag :capture_log
     test "OSM transport error — LiveView survives, spinner gone", %{conn: conn} do
       Req.Test.stub(:overpass, fn conn ->
         Req.Test.transport_error(conn, :timeout)
@@ -258,6 +303,26 @@ defmodule RevixWeb.CheckinNewLiveTest do
 
       html_done = wait_for_place_search(view)
       refute html_done =~ "loading-spinner"
+    end
+
+    test "logs abnormal task exits but not normal ones", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/checkins/new")
+
+      log =
+        capture_log(fn ->
+          send(view.pid, {:DOWN, make_ref(), :process, self(), :boom})
+          render(view)
+        end)
+
+      assert log =~ "task exited: :boom"
+
+      log =
+        capture_log(fn ->
+          send(view.pid, {:DOWN, make_ref(), :process, self(), :normal})
+          render(view)
+        end)
+
+      refute log =~ "task exited"
     end
   end
 

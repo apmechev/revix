@@ -303,6 +303,7 @@ defmodule Revix.Places do
         source: :db,
         id: p.id,
         name: p.name,
+        preferred_name: nil,
         lat: p_lat,
         lon: p_lon,
         distance: d,
@@ -316,7 +317,8 @@ defmodule Revix.Places do
   Returns OSM places near the given coordinates. Blocks on the Overpass HTTP call.
   """
   def search_nearby_osm(lat, lon, accuracy) do
-    radius = max(100, round(accuracy)) + 100
+    max_radius = Application.get_env(:revix, :places)[:nearby_max_radius] || 1_000
+    radius = min(max(100, round(accuracy)) + 100, max_radius)
 
     case Revix.Overpass.search_nearby(lat, lon, radius) do
       {:ok, results} -> results

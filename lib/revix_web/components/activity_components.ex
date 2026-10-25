@@ -279,6 +279,26 @@ defmodule RevixWeb.ActivityComponents do
   defp avatar_alt(person), do: person.display_name || person.username || ""
 
   @doc """
+  Renders a place search result's name, leading with its preferred
+  (e.g. English) name when one differs from the local name.
+  """
+  attr :place, :map, required: true
+
+  def place_result_name(%{place: %{preferred_name: preferred}} = assigns)
+      when is_binary(preferred) do
+    ~H"""
+    <span class="font-medium">{@place.preferred_name}</span>
+    <span class="text-base-content/60">({@place.name})</span>
+    """
+  end
+
+  def place_result_name(assigns) do
+    ~H"""
+    <span class="font-medium">{@place.name}</span>
+    """
+  end
+
+  @doc """
   Renders an author avatar linked to their profile.
 
   Renders nothing when `author` is nil.

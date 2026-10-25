@@ -26,9 +26,9 @@ config :revix, :home, activity_limit: 50
 
 config :revix, :entry, comment_max_length: 2000, checkin_lookback_hours: 24
 
-config :revix, :places, nearby_result_limit: 20
+config :revix, :places, nearby_result_limit: 20, nearby_max_radius: 1_000
 
-config :revix, :overpass, contact_url: "https://github.com/curt/revix"
+config :revix, :overpass, contact_url: "https://github.com/curt/revix", name_language: "en"
 
 config :revix, :import_req_plug, nil
 

@@ -133,7 +133,7 @@
                   phx-click="select_osm_result"
                   phx-value-index={index}
                 >
-                  <span class="font-medium">{result.name}</span>
+                  <.place_result_name place={result} />
                   <span class="text-base-content/60 ml-2">— {round(result.distance)}m</span>
                   <%= if result.source == :osm do %>
                     <span class="badge badge-sm badge-ghost ml-1">OSM</span>

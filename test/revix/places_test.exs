@@ -31,6 +31,23 @@ defmodule Revix.PlacesTest do
     end
   end
 
+  describe "search_nearby_db/3" do
+    test "returns local places with no preferred name" do
+      place =
+        place_fixture(%{
+          name: "Corner Cafe",
+          coordinates: %Geo.Point{coordinates: {-105.0, 40.0}, srid: 4326}
+        })
+
+      assert [result] = Places.search_nearby_db(40.0, -105.0, 50.0)
+      assert result.id == place.id
+      assert result.source == :db
+      assert result.name == "Corner Cafe"
+      assert Map.has_key?(result, :preferred_name)
+      assert result.preferred_name == nil
+    end
+  end
+
   describe "get_local_places_near/2" do
     test "returns nearby local places ordered by distance" do
       # Denver, CO
@@ -869,6 +886,56 @@ defmodule Revix.PlacesTest do
 
       assert {:error, changeset} = Places.upsert_remote_place(attrs)
       assert !!changeset.errors[:latitude] or !!changeset.errors[:longitude]
+    end
+  end
+end
+
+defmodule Revix.PlacesOsmSearchTest do
+  use ExUnit.Case, async: false
+
+  alias Revix.Places
+
+  @moduletag :capture_log
+
+  defp stub_capturing_query do
+    test_pid = self()
+
+    Req.Test.stub(:overpass, fn conn ->
+      {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      send(test_pid, {:query, URI.decode_query(raw)["data"]})
+      Req.Test.json(conn, %{"elements" => []})
+    end)
+  end
+
+  describe "search_nearby_osm/3" do
+    test "caps the search radius for coarse location fixes" do
+      stub_capturing_query()
+      assert [] = Places.search_nearby_osm(40.0, -105.0, 50_000.0)
+
+      assert_received {:query, query}
+      assert query =~ "around:1000,"
+    end
+
+    test "pads the accuracy by 100 metres" do
+      stub_capturing_query()
+      Places.search_nearby_osm(40.0, -105.0, 300.0)
+
+      assert_received {:query, query}
+      assert query =~ "around:400,"
+    end
+
+    test "uses a 100 metre floor before padding" do
+      stub_capturing_query()
+      Places.search_nearby_osm(40.0, -105.0, 10.0)
+
+      assert_received {:query, query}
+      assert query =~ "around:200,"
+    end
+
+    test "returns an empty list when Overpass fails" do
+      Req.Test.stub(:overpass, fn conn -> Plug.Conn.send_resp(conn, 504, "Gateway Timeout") end)
+
+      assert [] = Places.search_nearby_osm(40.0, -105.0, 100.0)
     end
   end
 end
