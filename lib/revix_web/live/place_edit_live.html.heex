@@ -124,8 +124,15 @@
               Searching for nearby places…
             </div>
 
+            <div :if={not @osm_loading and @osm_search_error} class="mb-4 text-sm text-error">
+              Couldn't reach OpenStreetMap. Try Search nearby again.
+            </div>
+
             <div
-              :if={not @osm_loading and @osm_searched and @osm_results == []}
+              :if={
+                not @osm_loading and not @osm_search_error and @osm_searched and
+                  @osm_results == []
+              }
               class="mb-4 text-sm text-base-content/70"
             >
               No places found nearby.

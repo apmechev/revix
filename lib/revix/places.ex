@@ -314,17 +314,19 @@ defmodule Revix.Places do
   end
 
   @doc """
-  Returns OSM places near the given coordinates. Blocks on the Overpass HTTP call.
+  Returns `{:ok, results}` with OSM places near the given coordinates, or
+  `{:error, :osm_unavailable}` when Overpass fails. Blocks on the Overpass
+  HTTP call; `Revix.Overpass` logs the failure cause.
   """
   def search_nearby_osm(lat, lon, accuracy) do
     max_radius = Application.get_env(:revix, :places)[:nearby_max_radius] || 1_000
     radius = min(max(100, round(accuracy)) + 100, max_radius)
 
-    case Revix.Overpass.search_nearby(lat, lon, radius) do
-      {:ok, results} -> results
-      {:error, _} -> []
-    end
+    lat |> Revix.Overpass.search_nearby(lon, radius) |> osm_search_result()
   end
+
+  defp osm_search_result({:ok, results}), do: {:ok, results}
+  defp osm_search_result({:error, _reason}), do: {:error, :osm_unavailable}
 
   @doc """
   Merges DB and OSM results, deduplicating OSM entries that already exist locally.

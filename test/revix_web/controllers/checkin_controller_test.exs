@@ -471,7 +471,22 @@ defmodule RevixWeb.CheckinControllerTest do
         get(conn, ~p"/api/places/search", %{lat: "40.0001", lon: "-105.0001", accuracy: "10"})
 
       response = json_response(conn, 200)
-      assert is_list(response)
+      assert [%{"name" => "Nearby Cafe", "source" => "db"}] = response
+    end
+
+    @tag :capture_log
+    test "returns DB results when the OSM search fails", %{conn: conn} do
+      Req.Test.stub(:overpass, fn conn -> Plug.Conn.send_resp(conn, 504, "Gateway Timeout") end)
+
+      place_fixture(%{
+        name: "Nearby Cafe",
+        coordinates: %Geo.Point{coordinates: {-105.0, 40.0}, srid: 4326}
+      })
+
+      conn =
+        get(conn, ~p"/api/places/search", %{lat: "40.0001", lon: "-105.0001", accuracy: "10"})
+
+      assert [%{"name" => "Nearby Cafe"}] = json_response(conn, 200)
     end
 
     test "returns empty list for invalid coordinates", %{conn: conn} do

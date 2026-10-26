@@ -340,12 +340,36 @@ defmodule Revix.OverpassSearchTest do
       end
     end
 
-    test "declares a 15 second timeout and 64 MiB maxsize" do
+    test "declares a 10 second timeout and 64 MiB maxsize" do
       stub_capturing_query()
       Overpass.search_nearby(40.0, -105.0, 500)
 
       assert_received {:query, query}
-      assert String.starts_with?(query, "[out:json][timeout:15][maxsize:67108864];")
+      assert String.starts_with?(query, "[out:json][timeout:10][maxsize:67108864];")
+    end
+
+    test "retries a failed search only once" do
+      calls = :counters.new(1, [])
+
+      Req.Test.stub(:overpass, fn conn ->
+        :counters.add(calls, 1, 1)
+        Plug.Conn.send_resp(conn, 504, "Gateway Timeout")
+      end)
+
+      assert {:error, {:http_error, 504}} = Overpass.search_nearby(40.0, -105.0, 500)
+      assert :counters.get(calls, 1) == 2
+    end
+
+    test "resolves enclosing areas outside the output set" do
+      stub_capturing_query()
+      Overpass.search_nearby(40.0, -105.0, 500)
+
+      assert_received {:query, query}
+      [before_union, union] = String.split(query, "\n(\n", parts: 2)
+
+      assert before_union =~ "is_in(40.0,-105.0)->.containing;"
+      refute union =~ "is_in("
+      assert union =~ "rel(pivot.containing)"
     end
   end
 
