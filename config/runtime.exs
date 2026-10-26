@@ -127,7 +127,11 @@ if config_env() == :prod do
     storage: Waffle.Storage.S3,
     bucket: bucket,
     virtual_host: s3_endpoint == nil,
-    asset_host: (if s3_endpoint, do: "#{s3_endpoint}/#{bucket}", else: "https://#{bucket}.s3.#{region}.amazonaws.com")
+    asset_host:
+      if(s3_endpoint,
+        do: "#{s3_endpoint}/#{bucket}",
+        else: "https://#{bucket}.s3.#{region}.amazonaws.com"
+      )
 
   config :revix, Revix.Mailer,
     adapter: Swoosh.Adapters.ExAwsAmazonSES,
