@@ -1375,4 +1375,210 @@ defmodule RevixWeb.CheckinNewLiveTest do
       assert html =~ ~r/name="place_manual\[longitude\]"[^>]*readonly/
     end
   end
+
+  # ── Contributor place search (OSM failures and loading) ─────────────────────
+
+  describe "contributor place search" do
+    setup :register_and_log_in_person
+
+    setup %{person: person} do
+      People.set_person_role(person, :contributor)
+      :ok
+    end
+
+    @tag :capture_log
+    test "an OSM failure shows an explicit error and keeps DB results", %{conn: conn} do
+      place =
+        place_fixture(%{
+          name: "DB Only Place",
+          coordinates: %Geo.Point{coordinates: {-105.0, 40.0}, srid: 4326}
+        })
+
+      Req.Test.stub(:overpass, fn conn -> Plug.Conn.send_resp(conn, 504, "Gateway Timeout") end)
+
+      view = mount_and_locate(conn)
+      html = wait_for_place_search(view)
+
+      assert html =~ place.name
+      assert html =~ "reach OpenStreetMap"
+      refute html =~ "No places found nearby"
+    end
+
+    test "a successful empty search says no places were found", %{conn: conn} do
+      Req.Test.stub(:overpass, fn conn -> Req.Test.json(conn, %{"elements" => []}) end)
+
+      view = mount_and_locate(conn)
+      html = wait_for_place_search(view)
+
+      assert html =~ "No places found nearby"
+      refute html =~ "reach OpenStreetMap"
+    end
+
+    @tag :capture_log
+    test "the OSM error clears when a later search succeeds", %{conn: conn} do
+      fail? = :atomics.new(1, [])
+      :atomics.put(fail?, 1, 1)
+
+      Req.Test.stub(:overpass, fn conn ->
+        respond_or_fail(conn, :atomics.get(fail?, 1), [cafe_node()])
+      end)
+
+      view = mount_and_locate(conn)
+      assert wait_for_place_search(view) =~ "reach OpenStreetMap"
+
+      :atomics.put(fail?, 1, 0)
+      render_hook(view, "locate", %{lat: 40.0, lon: -105.0, accuracy: 30.0})
+      html = wait_for_text(view, "Corner Cafe")
+
+      assert html =~ "Corner Cafe"
+      refute html =~ "reach OpenStreetMap"
+    end
+
+    test "manual place fields stay hidden while the search is loading", %{conn: conn} do
+      stub_blocking_overpass([])
+
+      {:ok, view, _html} = live(conn, ~p"/checkins/new")
+      Req.Test.allow(:overpass, self(), view.pid)
+      html = render_hook(view, "locate", %{lat: 40.0, lon: -105.0, accuracy: 30.0})
+
+      assert html =~ "loading-spinner"
+      refute html =~ "place_manual[name]"
+
+      release_overpass()
+      html = wait_for_place_search(view)
+
+      assert html =~ "No places found nearby"
+      assert html =~ "place_manual[name]"
+    end
+
+    test "submitting manual place params while the search is loading is rejected", %{
+      conn: conn
+    } do
+      stub_blocking_overpass([cafe_node()])
+
+      {:ok, view, _html} = live(conn, ~p"/checkins/new")
+      Req.Test.allow(:overpass, self(), view.pid)
+      render_hook(view, "locate", %{lat: 40.0, lon: -105.0, accuracy: 30.0})
+
+      render_submit(view, "submit", %{
+        "action" => "publish",
+        "checkin" => checkin_params(),
+        "place_manual" => %{
+          "name" => "Corner Cafe",
+          "latitude" => "40.0",
+          "longitude" => "-105.0"
+        }
+      })
+
+      html = render_click(view, "confirm_publish", %{})
+
+      assert html =~ "Still searching for nearby places"
+      assert Revix.Repo.aggregate(Revix.Places.Place, :count) == 0
+      assert Revix.Repo.aggregate(Revix.Entries.Entry, :count) == 0
+
+      release_overpass()
+      render(view)
+    end
+
+    test "a selected OSM node is saved with its OSM type, ID, and coordinates", %{conn: conn} do
+      Req.Test.stub(:overpass, fn conn -> Req.Test.json(conn, %{"elements" => [cafe_node()]}) end)
+
+      view = mount_and_locate(conn)
+      assert wait_for_place_search(view) =~ "Corner Cafe"
+
+      render_click(view, "select_place", %{"index" => "0"})
+      render_submit(view, "submit", %{"action" => "publish", "checkin" => checkin_params()})
+      {:error, {:redirect, _}} = render_click(view, "confirm_publish", %{})
+
+      place = Revix.Places.get_local_place_by_osm(:node, 701)
+      assert %{osm_type: :node, osm_id: 701} = place
+      assert place.coordinates.coordinates == {-105.0013, 40.0012}
+    end
+
+    test "a selected OSM node is saved with OSM data from a draft", %{conn: conn} do
+      Req.Test.stub(:overpass, fn conn -> Req.Test.json(conn, %{"elements" => [cafe_node()]}) end)
+
+      view = mount_and_locate(conn)
+      wait_for_place_search(view)
+
+      render_click(view, "select_place", %{"index" => "0"})
+      {:error, {:redirect, _}} = render_submit(view, "submit", %{"checkin" => checkin_params()})
+
+      assert %{osm_type: :node, osm_id: 701} = Revix.Places.get_local_place_by_osm(:node, 701)
+    end
+
+    @tag :capture_log
+    test "a manual place can still be entered after an OSM failure", %{conn: conn} do
+      Req.Test.stub(:overpass, fn conn -> Plug.Conn.send_resp(conn, 504, "Gateway Timeout") end)
+
+      view = mount_and_locate(conn)
+      html = wait_for_place_search(view)
+
+      assert html =~ "reach OpenStreetMap"
+      refute html =~ "No places found nearby"
+      assert html =~ "place_manual[name]"
+
+      render_submit(view, "submit", %{
+        "action" => "publish",
+        "checkin" => checkin_params(),
+        "place_manual" => %{
+          "name" => "Corner Cafe",
+          "latitude" => "40.0",
+          "longitude" => "-105.0"
+        }
+      })
+
+      {:error, {:redirect, _}} = render_click(view, "confirm_publish", %{})
+
+      assert [%{name: "Corner Cafe", osm_type: nil}] = Revix.Repo.all(Revix.Places.Place)
+    end
+  end
+
+  defp mount_and_locate(conn) do
+    {:ok, view, _html} = live(conn, ~p"/checkins/new")
+    Req.Test.allow(:overpass, self(), view.pid)
+    render_hook(view, "locate", %{lat: 40.0, lon: -105.0, accuracy: 30.0})
+    view
+  end
+
+  defp cafe_node do
+    %{
+      "type" => "node",
+      "id" => 701,
+      "lat" => 40.0012,
+      "lon" => -105.0013,
+      "tags" => %{"name" => "Corner Cafe", "amenity" => "cafe"}
+    }
+  end
+
+  defp checkin_params do
+    now = DateTime.utc_now() |> DateTime.to_naive() |> NaiveDateTime.to_iso8601()
+    %{"starts_at_local" => String.slice(now, 0, 16), "starts_tz" => "UTC"}
+  end
+
+  defp respond_or_fail(conn, 1, _elements), do: Plug.Conn.send_resp(conn, 504, "Gateway Timeout")
+  defp respond_or_fail(conn, _, elements), do: Req.Test.json(conn, %{"elements" => elements})
+
+  # Holds the Overpass response until release_overpass/0, so tests can act
+  # while the LiveView's search task is still in flight.
+  defp stub_blocking_overpass(elements) do
+    test_pid = self()
+
+    Req.Test.stub(:overpass, fn conn ->
+      send(test_pid, {:overpass_waiting, self()})
+
+      receive do
+        :release -> :ok
+      after
+        2_000 -> :ok
+      end
+
+      Req.Test.json(conn, %{"elements" => elements})
+    end)
+  end
+
+  defp release_overpass do
+    assert_receive {:overpass_waiting, stub_pid}, 1_000
+    send(stub_pid, :release)
+  end
 end

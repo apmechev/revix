@@ -36,9 +36,20 @@
             <span class="loading loading-spinner loading-sm"></span> Searching for nearby places…
           </div>
 
+          <%!-- OSM search failed — distinct from a successful empty search --%>
+          <div
+            :if={not @place_loading and @place_search_error}
+            class="mb-4 text-sm text-error"
+          >
+            Couldn't reach OpenStreetMap. Try Locate me again or enter the place manually.
+          </div>
+
           <%!-- No results — only shown after loading completes --%>
           <div
-            :if={not @place_loading and @place_searched and @place_results == []}
+            :if={
+              not @place_loading and not @place_search_error and @place_searched and
+                @place_results == []
+            }
             class="mb-4 text-sm text-base-content/70"
           >
             No places found nearby.
@@ -105,7 +116,10 @@
 
           <%!-- Manual place entry fields (owners only) --%>
           <.manual_place_fields
-            :if={@can_create_place and (@place_results == [] or @place_mode == :manual)}
+            :if={
+              @can_create_place and
+                ((@place_results == [] and not @place_loading) or @place_mode == :manual)
+            }
             changeset={@place_changeset}
             can_edit_coords={@can_edit_place_coords}
           />

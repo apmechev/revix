@@ -33,6 +33,7 @@ defmodule RevixWeb.PlaceNewLive do
        |> assign(:osm_sync_task_ref, nil)
        |> assign(:osm_results, [])
        |> assign(:osm_searched, false)
+       |> assign(:osm_search_error, false)
        |> assign(:osm_loading, false)
        |> assign(:osm_list_open, true)
        |> assign(:osm_sync_loading, false)
@@ -161,13 +162,15 @@ defmodule RevixWeb.PlaceNewLive do
   end
 
   @impl true
-  def handle_info({ref, {:osm_results, osm_results}}, socket) when is_reference(ref) do
+  def handle_info({ref, {:osm_results, osm_result}}, socket) when is_reference(ref) do
     if socket.assigns.osm_search_task_ref == ref do
       Process.demonitor(ref, [:flush])
+      {osm_results, search_error} = osm_results_and_error(osm_result)
 
       {:noreply,
        socket
        |> assign(:osm_results, osm_results)
+       |> assign(:osm_search_error, search_error)
        |> assign(:osm_loading, false)
        |> assign(:osm_search_task_ref, nil)}
     else
@@ -239,6 +242,9 @@ defmodule RevixWeb.PlaceNewLive do
         {:noreply, socket}
     end
   end
+
+  defp osm_results_and_error({:ok, results}), do: {results, false}
+  defp osm_results_and_error({:error, _reason}), do: {[], true}
 
   defp log_task_exit(:normal), do: :ok
 

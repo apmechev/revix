@@ -910,7 +910,7 @@ defmodule Revix.PlacesOsmSearchTest do
   describe "search_nearby_osm/3" do
     test "caps the search radius for coarse location fixes" do
       stub_capturing_query()
-      assert [] = Places.search_nearby_osm(40.0, -105.0, 50_000.0)
+      assert {:ok, []} = Places.search_nearby_osm(40.0, -105.0, 50_000.0)
 
       assert_received {:query, query}
       assert query =~ "around:1000,"
@@ -932,10 +932,29 @@ defmodule Revix.PlacesOsmSearchTest do
       assert query =~ "around:200,"
     end
 
-    test "returns an empty list when Overpass fails" do
+    test "returns an error when Overpass fails" do
       Req.Test.stub(:overpass, fn conn -> Plug.Conn.send_resp(conn, 504, "Gateway Timeout") end)
 
-      assert [] = Places.search_nearby_osm(40.0, -105.0, 100.0)
+      assert {:error, :osm_unavailable} = Places.search_nearby_osm(40.0, -105.0, 100.0)
+    end
+
+    test "returns the parsed results when Overpass succeeds" do
+      Req.Test.stub(:overpass, fn conn ->
+        Req.Test.json(conn, %{
+          "elements" => [
+            %{
+              "type" => "node",
+              "id" => 1,
+              "lat" => 40.0005,
+              "lon" => -105.0005,
+              "tags" => %{"name" => "Corner Cafe"}
+            }
+          ]
+        })
+      end)
+
+      assert {:ok, [%{name: "Corner Cafe", osm_type: :node, osm_id: 1}]} =
+               Places.search_nearby_osm(40.0, -105.0, 100.0)
     end
   end
 end

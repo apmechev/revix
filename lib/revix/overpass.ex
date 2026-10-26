@@ -2,7 +2,11 @@ defmodule Revix.Overpass do
   require Logger
 
   @default_api_url "https://overpass-api.de/api"
-  @query_settings "[out:json][timeout:15][maxsize:67108864];"
+  @max_size 67_108_864
+
+  # The nearby search is interactive, so it gives up sooner than a sync.
+  @search_limits [query_timeout: 10, receive_timeout: 13_000, max_retries: 1]
+  @fetch_limits [query_timeout: 15, receive_timeout: 20_000, max_retries: 2]
   @log_excerpt_length 500
 
   def search_nearby(lat, lon, radius)
@@ -14,8 +18,9 @@ defmodule Revix.Overpass do
 
   defp build_query(lat, lon, radius) do
     """
-    #{@query_settings}
+    #{query_settings(:search_nearby)}
     nwr(around:#{radius},#{lat},#{lon})[name]->.named;
+    is_in(#{lat},#{lon})->.containing;
     (
       nwr.named[tourism];
       nwr.named[amenity];
@@ -26,7 +31,6 @@ defmodule Revix.Overpass do
       nwr.named[railway=station];
       node.named[highway=bus_stop];
       node.named[railway=tram_stop];
-      is_in(#{lat},#{lon})->.containing;
       rel(pivot.containing)[name][boundary=administrative][admin_level~"^([6-9]|10)$"];
     );
     out tags center;
@@ -35,15 +39,24 @@ defmodule Revix.Overpass do
 
   def fetch_element(osm_type, osm_id)
       when osm_type in [:node, :way, :relation] and is_integer(osm_id) do
+    kind = {:fetch, osm_type, osm_id}
+
     query = """
-    #{@query_settings}
+    #{query_settings(kind)}
     #{osm_type}(#{osm_id});
     out tags center;
     """
 
-    with {:ok, body} <- post_query({:fetch, osm_type, osm_id}, query) do
+    with {:ok, body} <- post_query(kind, query) do
       first_element(body)
     end
+  end
+
+  defp limits(:search_nearby), do: @search_limits
+  defp limits({:fetch, _osm_type, _osm_id}), do: @fetch_limits
+
+  defp query_settings(kind) do
+    "[out:json][timeout:#{limits(kind)[:query_timeout]}][maxsize:#{@max_size}];"
   end
 
   defp first_element(%{"elements" => [element | _]}), do: parse_single_element(element)
@@ -51,7 +64,7 @@ defmodule Revix.Overpass do
 
   defp post_query(kind, query) do
     plug = Application.get_env(:revix, :overpass_req_plug)
-    opts = req_opts() |> Keyword.put(:form, data: query)
+    opts = req_opts(kind) |> Keyword.put(:form, data: query)
     opts = if plug, do: Keyword.put(opts, :plug, plug), else: opts
 
     started = System.monotonic_time(:millisecond)
@@ -176,15 +189,16 @@ defmodule Revix.Overpass do
 
   defp element_coordinates(_), do: {nil, nil}
 
-  defp req_opts do
+  defp req_opts(kind) do
     version = Application.spec(:revix, :vsn) || "0"
     config = Application.get_env(:revix, :overpass, [])
     contact = config[:contact_url] || ""
+    limits = limits(kind)
 
     [
-      receive_timeout: 20_000,
+      receive_timeout: limits[:receive_timeout],
       retry: :transient,
-      max_retries: 2,
+      max_retries: limits[:max_retries],
       headers: [{"user-agent", "revix/#{version} (#{contact})"}]
     ]
     |> put_retry_delay(config[:retry_delay])

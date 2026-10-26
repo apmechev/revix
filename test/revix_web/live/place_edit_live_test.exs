@@ -343,6 +343,48 @@ defmodule RevixWeb.PlaceEditLiveTest do
       assert html =~ "OSM"
     end
 
+    @tag :capture_log
+    test "shows an OSM error instead of no-results when Overpass fails", %{
+      conn: conn,
+      place: place
+    } do
+      Req.Test.stub(:overpass, fn conn -> Plug.Conn.send_resp(conn, 504, "Gateway Timeout") end)
+
+      {:ok, view, _html} = live(conn, ~p"/places/#{place.id}/edit")
+      Req.Test.allow(:overpass, self(), view.pid)
+
+      render_click(view, "search_nearby")
+      html = wait_for_text(view, "reach OpenStreetMap")
+
+      assert html =~ "reach OpenStreetMap"
+      refute html =~ "No places found nearby"
+    end
+
+    @tag :capture_log
+    test "clears the OSM error when a later search succeeds", %{conn: conn, place: place} do
+      fail? = :atomics.new(1, [])
+      :atomics.put(fail?, 1, 1)
+
+      Req.Test.stub(:overpass, fn conn ->
+        if :atomics.get(fail?, 1) == 1,
+          do: Plug.Conn.send_resp(conn, 504, "Gateway Timeout"),
+          else: Req.Test.json(conn, %{"elements" => []})
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/places/#{place.id}/edit")
+      Req.Test.allow(:overpass, self(), view.pid)
+
+      render_click(view, "search_nearby")
+      wait_for_text(view, "reach OpenStreetMap")
+
+      :atomics.put(fail?, 1, 0)
+      render_click(view, "search_nearby")
+      html = wait_for_text(view, "No places found nearby")
+
+      assert html =~ "No places found nearby"
+      refute html =~ "reach OpenStreetMap"
+    end
+
     test "shows 'No places found nearby' when OSM returns empty", %{conn: conn, place: place} do
       Req.Test.stub(:overpass, fn conn ->
         Req.Test.json(conn, %{"elements" => []})

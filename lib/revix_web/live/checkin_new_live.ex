@@ -22,6 +22,7 @@ defmodule RevixWeb.CheckinNewLive do
       |> assign(:place_results, [])
       |> assign(:place_searched, false)
       |> assign(:place_loading, false)
+      |> assign(:place_search_error, false)
       |> assign(:place_task_ref, nil)
       |> assign(:place_list_open, true)
       |> assign(:selected_place, nil)
@@ -242,6 +243,20 @@ defmodule RevixWeb.CheckinNewLive do
      |> assign(:pending_publish_params, nil)}
   end
 
+  # A search still in flight means the manual fields were never meant to be
+  # submitted, so don't fall back to creating a manual place from them.
+  defp do_create_checkin(
+         %{assigns: %{place_mode: :none, place_loading: true}} = socket,
+         _checkin_params,
+         _place_params,
+         _mode
+       ) do
+    {:noreply,
+     socket
+     |> assign(:show_publish_modal, false)
+     |> put_flash(:error, "Still searching for nearby places — pick one when the list appears.")}
+  end
+
   defp do_create_checkin(socket, checkin_params, place_params, mode) do
     scope = socket.assigns.current_scope
     companion_uris = Enum.map(socket.assigns.companions, & &1.uri)
@@ -311,16 +326,18 @@ defmodule RevixWeb.CheckinNewLive do
   end
 
   @impl true
-  def handle_info({ref, {:osm_results, osm_results, db_results}}, socket)
+  def handle_info({ref, {:osm_results, osm_result, db_results}}, socket)
       when is_reference(ref) do
     if socket.assigns.place_task_ref == ref do
       Process.demonitor(ref, [:flush])
+      {osm_results, search_error} = osm_results_and_error(osm_result)
       merged = Places.merge_place_results(db_results, osm_results)
 
       socket =
         socket
         |> assign(:place_results, merged)
         |> assign(:place_loading, false)
+        |> assign(:place_search_error, search_error)
         |> assign(:place_task_ref, nil)
 
       socket =
@@ -365,6 +382,9 @@ defmodule RevixWeb.CheckinNewLive do
       {:noreply, socket}
     end
   end
+
+  defp osm_results_and_error({:ok, results}), do: {results, false}
+  defp osm_results_and_error({:error, _reason}), do: {[], true}
 
   defp log_task_exit(:normal), do: :ok
 
