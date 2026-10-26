@@ -32,6 +32,7 @@ S3_ENDPOINT=             # custom S3 endpoint (e.g., https://r3-it.storage.cloud
 
 # Overpass (optional)
 OVERPASS_API_URL=        # Overpass API base, default https://overpass-api.de/api
+OVERPASS_API_BEARER_TOKEN= # optional; bearer token for endpoints that require auth
 
 # SMTP (optional — overrides SES for outbound email when SMTP_HOST is set)
 SMTP_HOST=               # relay hostname; presence enables SMTP
