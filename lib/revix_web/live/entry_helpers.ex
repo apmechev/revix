@@ -16,6 +16,19 @@ defmodule RevixWeb.Live.EntryHelpers do
     }
   end
 
+  @doc """
+  Select options for the post visibility field, as `{label, value}` pairs.
+  Values are the string forms of `Revix.Ecto.Visibility`.
+  """
+  def visibility_options do
+    [
+      {"Public — everyone", "public"},
+      {"Instance — signed-in users on this site", "instance"},
+      {"Followers — your followers", "followers"},
+      {"Private — just you", "private"}
+    ]
+  end
+
   def search_companions("", _exclude_uri), do: []
 
   def search_companions(query, exclude_uri) do

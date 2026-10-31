@@ -23,6 +23,7 @@
           person={post.author}
           class="inline-block w-5 h-5 rounded-full align-middle mr-1"
         />{post.name || "Post"}
+        <.visibility_badge :if={post.published_at_local} visibility={post.visibility} />
         <%= if post.published_at_local do %>
           <span class="text-base-content/60">
             {Calendar.strftime(post.published_at_local, "%Y-%m-%d")}

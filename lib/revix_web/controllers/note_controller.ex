@@ -8,8 +8,33 @@ defmodule RevixWeb.NoteController do
   action_fallback RevixWeb.FallbackController
 
   def show(conn, %{"id" => id}) do
-    with {:ok, note} <- Entries.get_comment_with_author(id) do
+    with {:ok, note} <- Entries.get_comment_with_author(id),
+         :ok <- authorize_view(conn, note) do
       show_by_format(conn, note, get_format(conn))
+    end
+  end
+
+  # A note is only as visible as its root entry (checkin or post): a comment
+  # on a non-public post must not be reachable directly.
+  defp authorize_view(conn, note) do
+    case walk_to_root(note.in_reply_to_uri) do
+      {:ok, root} ->
+        if Entries.visible_to?(root, conn.assigns[:current_scope]),
+          do: :ok,
+          else: {:error, :not_found}
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp walk_to_root(nil), do: {:error, :not_found}
+
+  defp walk_to_root(uri) do
+    case Entries.get_entry_by_uri(uri) do
+      {:ok, %Entry{type: :note, in_reply_to_uri: parent_uri}} -> walk_to_root(parent_uri)
+      {:ok, %Entry{} = entry} -> {:ok, entry}
+      other -> other
     end
   end
 

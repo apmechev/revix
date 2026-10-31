@@ -35,6 +35,7 @@
               )}
             </time>
           <% end %>
+          <.visibility_badge :if={@post.published_at_utc} visibility={@post.visibility} />
           <%= if @post.entry_places != [] do %>
             <span>
               at

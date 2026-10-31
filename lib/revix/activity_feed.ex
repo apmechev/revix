@@ -21,7 +21,7 @@ defmodule Revix.ActivityFeed do
 
   def build_feed_activities(scope, limit) do
     checkins = Entries.get_recent_checkins(limit)
-    posts = Entries.get_recent_posts(limit)
+    posts = Entries.get_recent_posts(limit, scope: scope)
     likes = Likes.get_recent_likes(limit, include_remote: true)
     comments = Entries.get_recent_comments_for_feed(limit, include_replies: true)
     drafts = get_drafts_for_scope(scope)
@@ -43,7 +43,7 @@ defmodule Revix.ActivityFeed do
   def build_feed_activities(scope, cursor, page_size) do
     probe = page_size + 1
     checkins = Entries.get_recent_checkins(probe, before: cursor)
-    posts = Entries.get_recent_posts(probe, before: cursor)
+    posts = Entries.get_recent_posts(probe, before: cursor, scope: scope)
     likes = Likes.get_recent_likes(probe, include_remote: true, before: cursor)
     comments = Entries.get_recent_comments_for_feed(probe, include_replies: true, before: cursor)
     drafts = if is_nil(cursor), do: get_drafts_for_scope(scope), else: []
@@ -75,7 +75,7 @@ defmodule Revix.ActivityFeed do
 
   def build_person_activities(person, scope, limit) do
     checkins = Entries.get_recent_checkins_for_person(person, limit)
-    posts = Entries.get_recent_posts_for_person(person, limit)
+    posts = Entries.get_recent_posts_for_person(person, limit, scope: scope)
     likes = Likes.get_recent_likes_for_person(person, limit)
 
     comments =
@@ -97,7 +97,7 @@ defmodule Revix.ActivityFeed do
   def build_person_activities(person, scope, cursor, page_size) do
     probe = page_size + 1
     checkins = Entries.get_recent_checkins_for_person(person, probe, before: cursor)
-    posts = Entries.get_recent_posts_for_person(person, probe, before: cursor)
+    posts = Entries.get_recent_posts_for_person(person, probe, before: cursor, scope: scope)
     likes = Likes.get_recent_likes_for_person(person, probe, before: cursor)
 
     comments =

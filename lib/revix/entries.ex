@@ -64,10 +64,11 @@ defmodule Revix.Entries do
     |> Repo.all()
   end
 
-  def get_local_posts_for_place(%Place{} = place) do
+  def get_local_posts_for_place(%Place{} = place, opts \\ []) do
     Entry
     |> local_posts()
     |> published_posts()
+    |> visible_posts(Keyword.get(opts, :scope))
     |> join(:inner, [e], ep in Revix.EntryPlaces.EntryPlace, on: ep.entry_uri == e.uri)
     |> where([e, ep], ep.place_uri == ^place.uri)
     |> order_by_published()
@@ -188,6 +189,7 @@ defmodule Revix.Entries do
     Entry
     |> local_posts()
     |> published_posts()
+    |> visible_posts(Keyword.get(opts, :scope))
     |> maybe_before_published(Keyword.get(opts, :before))
     |> order_by_published()
     |> maybe_limit(limit)
@@ -200,6 +202,7 @@ defmodule Revix.Entries do
     |> local_posts()
     |> published_posts()
     |> where([e], e.author_uri == ^person.uri)
+    |> visible_posts(Keyword.get(opts, :scope))
     |> maybe_before_published(Keyword.get(opts, :before))
     |> order_by_published()
     |> maybe_limit(limit)
@@ -229,13 +232,13 @@ defmodule Revix.Entries do
     |> Repo.all()
   end
 
-  def get_local_post(id) do
+  def get_local_post(id, scope \\ nil) do
     Entry
     |> local_posts()
     |> where([e], e.id == ^id)
     |> with_post_preloads()
     |> Repo.one()
-    |> entry_ok_or_not_found()
+    |> entry_visible_or_not_found(scope)
   rescue
     Ecto.Query.CastError -> {:error, :not_found}
   end
@@ -852,6 +855,71 @@ defmodule Revix.Entries do
     where(query, [e], not is_nil(e.published_at_utc) and is_nil(e.tombstoned_at))
   end
 
+  @doc """
+  Returns whether `entry` is visible to `scope` (`nil` means an anonymous
+  visitor).
+
+  - `:public` — everyone
+  - `:instance` — any signed-in local user
+  - `:followers` — the author and their accepted followers
+  - `:private` — the author only
+
+  Drafts (no `published_at_utc`) are handled separately by callers and are
+  never visible to anyone but the author.
+  """
+  def visible_to?(%Entry{visibility: :public}, _scope), do: true
+
+  def visible_to?(%Entry{author_uri: author_uri}, %{person: %{uri: uri}})
+      when uri == author_uri,
+      do: true
+
+  def visible_to?(%Entry{visibility: :instance}, scope) when not is_nil(scope), do: true
+
+  def visible_to?(%Entry{visibility: :followers, author_uri: author_uri}, %{
+        person: %{uri: uri}
+      }),
+      do: Revix.Follows.follower_of?(uri, author_uri)
+
+  def visible_to?(%Entry{}, _scope), do: false
+
+  # Filters a post query to what `scope` may see. List queries calling this
+  # must already restrict to published, non-tombstoned posts.
+  defp visible_posts(query, %{person: %{uri: viewer_uri}}) do
+    accepted_followings =
+      from f in Revix.Follows.Follow,
+        where:
+          f.follower_uri == ^viewer_uri and is_nil(f.unfollowed_at) and
+            not is_nil(f.accepted_at),
+        select: f.following_uri
+
+    where(
+      query,
+      [e],
+      e.visibility == :public or e.visibility == :instance or e.author_uri == ^viewer_uri or
+        (e.visibility == :followers and e.author_uri in subquery(accepted_followings))
+    )
+  end
+
+  defp visible_posts(query, _scope) do
+    where(query, [e], e.visibility == :public)
+  end
+
+  defp entry_visible_or_not_found(%Entry{} = entry, scope) do
+    if visible_to?(entry, scope) and
+         (not is_nil(entry.published_at_utc) or scope_author?(scope, entry)) do
+      {:ok, entry}
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp entry_visible_or_not_found(nil, _scope), do: {:error, :not_found}
+
+  defp scope_author?(%{person: %{uri: uri}}, %Entry{author_uri: author_uri}),
+    do: uri == author_uri
+
+  defp scope_author?(_scope, _entry), do: false
+
   defp draft_posts(query), do: where(query, [e], is_nil(e.published_at_utc))
 
   defp order_by_recency(query) do
@@ -931,6 +999,9 @@ defmodule Revix.Entries do
   # here exactly once (LiveView flows call it after their transaction commits via
   # `enqueue_delivery/2`; simpler flows via `maybe_enqueue_create/3`), so the
   # subscriber-notification trigger lives here too.
+  # Private posts are never federated nor announced to subscribers.
+  defp enqueue_deliver_entry(%Entry{type: :post, visibility: :private}, _type), do: :ok
+
   defp enqueue_deliver_entry(entry, type) do
     %{"entry_id" => entry.id, "activity_type" => type}
     |> Revix.Workers.DeliverEntryWorker.new()

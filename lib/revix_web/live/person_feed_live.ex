@@ -113,7 +113,7 @@ defmodule RevixWeb.PersonFeedLive do
   @impl true
   def handle_info({:post_created, post}, socket) do
     if post.author_uri == socket.assigns.person.uri do
-      case Entries.get_local_post(post.id) do
+      case Entries.get_local_post(post.id, socket.assigns.current_scope) do
         {:ok, full_post} ->
           {:noreply, prepend_activity(socket, {:post, full_post})}
 

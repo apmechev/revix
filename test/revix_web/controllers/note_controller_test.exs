@@ -409,4 +409,54 @@ defmodule RevixWeb.NoteControllerTest do
       assert conn.status == 404
     end
   end
+
+  describe "GET /notes/:id root post visibility" do
+    test "returns 404 to anonymous for a comment on a non-public post" do
+      author = person_fixture()
+      post = post_fixture(%{author_uri: author.uri, visibility: :private})
+      comment = comment_fixture(person_scope_fixture(author), post)
+
+      conn = get(build_conn(), ~p"/notes/#{comment.id}")
+      assert conn.status == 404
+
+      conn =
+        build_conn()
+        |> put_req_header("accept", "application/activity+json")
+        |> get(~p"/notes/#{comment.id}")
+
+      assert conn.status == 404
+    end
+
+    test "returns 404 to a signed-in non-follower for a comment on a followers-only post" do
+      author = person_fixture()
+      viewer = person_fixture()
+      post = post_fixture(%{author_uri: author.uri, visibility: :followers})
+      comment = comment_fixture(person_scope_fixture(author), post)
+
+      conn =
+        build_conn()
+        |> log_in_person(viewer)
+        |> put_req_header("accept", "application/activity+json")
+        |> get(~p"/notes/#{comment.id}")
+
+      assert conn.status == 404
+    end
+
+    test "returns the note to a follower for a comment on a followers-only post" do
+      author = person_fixture()
+      follower = person_fixture()
+      {:ok, _} = Revix.Follows.follow(Scope.for_person(follower), author.uri)
+      post = post_fixture(%{author_uri: author.uri, visibility: :followers})
+      comment = comment_fixture(person_scope_fixture(author), post)
+
+      conn =
+        build_conn()
+        |> log_in_person(follower)
+        |> put_req_header("accept", "application/activity+json")
+        |> get(~p"/notes/#{comment.id}")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "content-type") |> hd() =~ "application/activity+json"
+    end
+  end
 end

@@ -15,20 +15,30 @@ defmodule Revix.Workers.DeliverEntryWorker do
       |> preload(^entry_preloads())
       |> Repo.one!()
 
-    with {:ok, actor} <- People.get_local_person_by_uri(entry.author_uri) do
-      activity = build_activity(type, entry)
-      followers = Follows.get_followers_for_person(entry.author_uri)
+    # Private and instance-only posts are never delivered to remote inboxes:
+    # their audience is the author / local signed-in users, who see them in-app.
+    if federated?(entry) do
+      with {:ok, actor} <- People.get_local_person_by_uri(entry.author_uri) do
+        activity = build_activity(type, entry)
+        followers = Follows.get_followers_for_person(entry.author_uri)
 
-      Enum.each(followers, fn follow ->
-        case Federation.resolve_inbox(follow.follower_uri) do
-          {:ok, inbox_url} -> Federation.deliver(activity, inbox_url, actor)
-          _ -> :ok
-        end
-      end)
+        Enum.each(followers, fn follow ->
+          case Federation.resolve_inbox(follow.follower_uri) do
+            {:ok, inbox_url} -> Federation.deliver(activity, inbox_url, actor)
+            _ -> :ok
+          end
+        end)
+      end
     end
 
     :ok
   end
+
+  defp federated?(%Entry{type: :post, visibility: visibility})
+       when visibility in [:private, :instance],
+       do: false
+
+  defp federated?(_entry), do: true
 
   defp build_activity("Create", entry), do: wrap_create(entry)
   defp build_activity("Update", entry), do: wrap_update(entry)
@@ -44,20 +54,23 @@ defmodule Revix.Workers.DeliverEntryWorker do
   end
 
   defp wrap_create(entry) do
+    {to, cc} = Revix.ActivityPub.activity_audience(entry)
+
     %{
       "type" => "Create",
       "id" => entry.uri <> "#create",
       "actor" => entry.author_uri,
       "published" => format_datetime(entry.published_at_utc),
       "object" => build_object(entry),
-      "to" => ["https://www.w3.org/ns/activitystreams#Public"],
-      "cc" => [RevixWeb.CanonicalRoutes.person_followers_url(entry.author.id)]
+      "to" => to,
+      "cc" => cc
     }
     |> Revix.ActivityPub.contextify()
   end
 
   defp wrap_update(entry) do
     modified_at = entry.modified_at_utc || entry.published_at_utc
+    {to, cc} = Revix.ActivityPub.activity_audience(entry)
 
     %{
       "type" => "Update",
@@ -65,8 +78,8 @@ defmodule Revix.Workers.DeliverEntryWorker do
       "actor" => entry.author_uri,
       "published" => format_datetime(modified_at),
       "object" => build_object(entry),
-      "to" => ["https://www.w3.org/ns/activitystreams#Public"],
-      "cc" => [RevixWeb.CanonicalRoutes.person_followers_url(entry.author.id)]
+      "to" => to,
+      "cc" => cc
     }
     |> Revix.ActivityPub.contextify()
   end

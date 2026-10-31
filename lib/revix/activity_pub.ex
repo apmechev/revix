@@ -11,9 +11,33 @@ defmodule Revix.ActivityPub do
   @schema_context %{"schema" => "https://schema.org/", "sameAs" => "schema:sameAs"}
   @attachment_name_max 160
   @attachment_summary_max 1024
+  @public "https://www.w3.org/ns/activitystreams#Public"
 
   def contextify(map) do
     Map.put(map, "@context", [@as_context, @schema_context])
+  end
+
+  @doc """
+  Returns `{to, cc}` addressing lists for an entry, based on its visibility.
+
+  - `:public` — `to` Public, `cc` followers (the default)
+  - `:followers` — `to` the followers collection, `cc` Public (Mastodon-style)
+  - `:instance` / `:private` — addressed to the followers collection only;
+    these are never delivered to remote inboxes (see `DeliverEntryWorker`)
+
+  Expects `:author` to be preloaded.
+  """
+  def activity_audience(%{visibility: :followers, author: %Person{id: id}}) do
+    {[CanonicalRoutes.person_followers_url(id)], [@public]}
+  end
+
+  def activity_audience(%{visibility: visibility, author: %Person{id: id}})
+      when visibility in [:instance, :private] do
+    {[CanonicalRoutes.person_followers_url(id)], []}
+  end
+
+  def activity_audience(%{author: %Person{id: id}}) do
+    {[@public], [CanonicalRoutes.person_followers_url(id)]}
   end
 
   def to_person_activity(%Person{} = person) do
@@ -67,14 +91,16 @@ defmodule Revix.ActivityPub do
   end
 
   defp note_base(entry) do
+    {to, cc} = activity_audience(entry)
+
     %{
       "type" => "Note",
       "id" => entry.uri,
       "url" => entry.url,
       "attributedTo" => entry.author_uri,
       "published" => format_datetime(entry.published_at_utc),
-      "to" => ["https://www.w3.org/ns/activitystreams#Public"],
-      "cc" => [CanonicalRoutes.person_followers_url(entry.author.id)],
+      "to" => to,
+      "cc" => cc,
       "likes" => CanonicalRoutes.entry_likes_url(entry.id),
       "replies" => CanonicalRoutes.entry_replies_url(entry.id)
     }
