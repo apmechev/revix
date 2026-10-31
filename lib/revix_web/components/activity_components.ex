@@ -174,9 +174,38 @@ defmodule RevixWeb.ActivityComponents do
     <a href={@post.url} class="font-semibold hover:underline">
       {@post.name || "a post"}
     </a>
+    <.visibility_badge visibility={Map.get(@post, :visibility, :public)} />
     <.entry_snippet entry={@post} />
     """
   end
+
+  @doc """
+  Renders a small badge indicating a post's visibility when it is not public.
+  """
+  attr :visibility, :atom, default: :public
+
+  def visibility_badge(assigns) do
+    ~H"""
+    <span
+      :if={@visibility != :public}
+      class="badge badge-sm badge-ghost gap-1 align-middle"
+      title={visibility_label(@visibility)}
+    >
+      <.icon name={visibility_icon(@visibility)} class="w-3 h-3" />
+      {visibility_label(@visibility)}
+    </span>
+    """
+  end
+
+  defp visibility_label(:private), do: "Private"
+  defp visibility_label(:followers), do: "Followers"
+  defp visibility_label(:instance), do: "Instance"
+  defp visibility_label(_), do: "Public"
+
+  defp visibility_icon(:private), do: "hero-lock-closed"
+  defp visibility_icon(:followers), do: "hero-user-group"
+  defp visibility_icon(:instance), do: "hero-server"
+  defp visibility_icon(_), do: "hero-globe-alt"
 
   attr :post, :map, required: true
 
