@@ -3136,4 +3136,238 @@ defmodule Revix.EntriesTest do
       assert {:error, :not_found} = Entries.get_comment_for_feed("not-valid-id")
     end
   end
+
+  describe "post visibility" do
+    defp accept_follow(follower, author) do
+      {:ok, _follow} = Revix.Follows.follow(Scope.for_person(follower), author.uri)
+    end
+
+    test "visible_to?/2 access matrix" do
+      author = person_fixture()
+      follower = person_fixture()
+      other = person_fixture()
+      accept_follow(follower, author)
+
+      author_scope = Scope.for_person(author)
+      follower_scope = Scope.for_person(follower)
+      other_scope = Scope.for_person(other)
+
+      matrix = [
+        {:public, true, true, true, true},
+        {:instance, false, true, true, true},
+        {:followers, false, false, true, true},
+        {:private, false, false, false, true}
+      ]
+
+      for {visibility, anonymous, other?, follower?, author?} <- matrix do
+        post = post_fixture(%{author_uri: author.uri, visibility: visibility})
+
+        assert Entries.visible_to?(post, nil) == anonymous,
+               "visibility #{visibility} anonymous"
+
+        assert Entries.visible_to?(post, other_scope) == other?,
+               "visibility #{visibility} other user"
+
+        assert Entries.visible_to?(post, follower_scope) == follower?,
+               "visibility #{visibility} follower"
+
+        assert Entries.visible_to?(post, author_scope) == author?,
+               "visibility #{visibility} author"
+      end
+    end
+
+    test "visible_to?/2 treats an unfollowed follower as a non-follower" do
+      author = person_fixture()
+      follower = person_fixture()
+      follower_scope = Scope.for_person(follower)
+      accept_follow(follower, author)
+      post = post_fixture(%{author_uri: author.uri, visibility: :followers})
+      assert Entries.visible_to?(post, follower_scope)
+
+      {:ok, _} = Revix.Follows.unfollow(follower_scope, author.uri)
+      refute Entries.visible_to?(post, follower_scope)
+    end
+
+    test "get_recent_posts/2 filters by scope" do
+      author = person_fixture()
+      follower = person_fixture()
+      other = person_fixture()
+      accept_follow(follower, author)
+
+      public = post_fixture(%{author_uri: author.uri, visibility: :public})
+      instance = post_fixture(%{author_uri: author.uri, visibility: :instance})
+      followers = post_fixture(%{author_uri: author.uri, visibility: :followers})
+      private = post_fixture(%{author_uri: author.uri, visibility: :private})
+
+      ids = fn scope ->
+        scope
+        |> then(&Entries.get_recent_posts(50, scope: &1))
+        |> Enum.map(& &1.id)
+        |> Enum.sort()
+      end
+
+      assert ids.(nil) == [public.id]
+      assert ids.(Scope.for_person(other)) == Enum.sort([public.id, instance.id])
+
+      assert ids.(Scope.for_person(follower)) ==
+               Enum.sort([public.id, instance.id, followers.id])
+
+      assert ids.(Scope.for_person(author)) ==
+               Enum.sort([public.id, instance.id, followers.id, private.id])
+    end
+
+    test "get_recent_posts_for_person/3 filters by scope" do
+      author = person_fixture()
+      follower = person_fixture()
+      accept_follow(follower, author)
+
+      public = post_fixture(%{author_uri: author.uri, visibility: :public})
+      private = post_fixture(%{author_uri: author.uri, visibility: :private})
+
+      public_id = public.id
+      private_id = private.id
+
+      assert [^public_id] =
+               Enum.map(Entries.get_recent_posts_for_person(author, 50, scope: nil), & &1.id)
+
+      assert [^public_id] =
+               Enum.map(
+                 Entries.get_recent_posts_for_person(author, 50,
+                   scope: Scope.for_person(follower)
+                 ),
+                 & &1.id
+               )
+
+      assert Enum.sort(
+               Enum.map(
+                 Entries.get_recent_posts_for_person(author, 50, scope: Scope.for_person(author)),
+                 & &1.id
+               )
+             ) == Enum.sort([public_id, private_id])
+    end
+
+    test "get_local_post/2 access matrix" do
+      author = person_fixture()
+      follower = person_fixture()
+      other = person_fixture()
+      accept_follow(follower, author)
+
+      public = post_fixture(%{author_uri: author.uri, visibility: :public})
+      instance = post_fixture(%{author_uri: author.uri, visibility: :instance})
+      followers = post_fixture(%{author_uri: author.uri, visibility: :followers})
+      private = post_fixture(%{author_uri: author.uri, visibility: :private})
+
+      assert {:ok, _} = Entries.get_local_post(public.id)
+      assert {:error, :not_found} = Entries.get_local_post(instance.id)
+      assert {:ok, _} = Entries.get_local_post(instance.id, Scope.for_person(other))
+      assert {:error, :not_found} = Entries.get_local_post(followers.id)
+      assert {:error, :not_found} = Entries.get_local_post(followers.id, Scope.for_person(other))
+      assert {:ok, _} = Entries.get_local_post(followers.id, Scope.for_person(follower))
+      assert {:error, :not_found} = Entries.get_local_post(private.id)
+      assert {:error, :not_found} = Entries.get_local_post(private.id, Scope.for_person(follower))
+      assert {:ok, _} = Entries.get_local_post(private.id, Scope.for_person(author))
+    end
+
+    test "get_local_post/2 hides drafts from everyone but the author" do
+      author = person_fixture()
+      other = person_fixture()
+      draft = draft_post_fixture(%{author_uri: author.uri})
+
+      assert {:error, :not_found} = Entries.get_local_post(draft.id)
+      assert {:error, :not_found} = Entries.get_local_post(draft.id, Scope.for_person(other))
+
+      assert {:ok, found} = Entries.get_local_post(draft.id, Scope.for_person(author))
+      assert found.id == draft.id
+    end
+
+    test "get_local_posts_for_place/2 filters by scope" do
+      author = person_fixture()
+      other = person_fixture()
+      place = place_fixture()
+
+      public = post_fixture(%{author_uri: author.uri, visibility: :public})
+      private = post_fixture(%{author_uri: author.uri, visibility: :private})
+      {:ok, _} = Revix.EntryPlaces.add_place(public.uri, place.uri)
+      {:ok, _} = Revix.EntryPlaces.add_place(private.uri, place.uri)
+
+      public_id = public.id
+      private_id = private.id
+
+      assert [^public_id] =
+               place |> Entries.get_local_posts_for_place() |> Enum.map(& &1.id)
+
+      assert [^public_id] =
+               place
+               |> Entries.get_local_posts_for_place(scope: Scope.for_person(other))
+               |> Enum.map(& &1.id)
+
+      assert Enum.sort(
+               place
+               |> Entries.get_local_posts_for_place(scope: Scope.for_person(author))
+               |> Enum.map(& &1.id)
+             ) == Enum.sort([public_id, private_id])
+    end
+
+    test "create_local_post stores the requested visibility" do
+      scope = person_scope_fixture()
+
+      {:ok, post} =
+        Entries.create_local_post(
+          scope,
+          %{"content" => "hello", "published_tz" => "UTC", "visibility" => "followers"},
+          &post_uri_fn/1,
+          &post_url_fn/1,
+          mode: :publish,
+          enqueue_delivery: false
+        )
+
+      assert post.visibility == :followers
+    end
+
+    test "create_local_post defaults to public visibility" do
+      scope = person_scope_fixture()
+
+      {:ok, post} =
+        Entries.create_local_post(
+          scope,
+          %{"content" => "hello", "published_tz" => "UTC"},
+          &post_uri_fn/1,
+          &post_url_fn/1,
+          mode: :publish,
+          enqueue_delivery: false
+        )
+
+      assert post.visibility == :public
+    end
+
+    test "create_local_post rejects an invalid visibility" do
+      scope = person_scope_fixture()
+
+      {:error, changeset} =
+        Entries.create_local_post(
+          scope,
+          %{"content" => "hello", "published_tz" => "UTC", "visibility" => "everyone"},
+          &post_uri_fn/1,
+          &post_url_fn/1,
+          mode: :publish,
+          enqueue_delivery: false
+        )
+
+      assert %{visibility: [_ | _]} = errors_on(changeset)
+    end
+
+    test "enqueue_delivery is a no-op for private posts" do
+      post = post_fixture(%{visibility: :private})
+
+      assert :ok = Entries.enqueue_delivery(post, "Create")
+      refute_enqueued(worker: Revix.Workers.DeliverEntryWorker)
+    end
+
+    test "enqueue_delivery enqueues for non-private posts" do
+      post = post_fixture(%{visibility: :followers})
+
+      assert :ok = Entries.enqueue_delivery(post, "Create")
+      assert_enqueued(worker: Revix.Workers.DeliverEntryWorker, args: %{"entry_id" => post.id})
+    end
+  end
 end

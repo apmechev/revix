@@ -53,6 +53,15 @@ defmodule RevixWeb.PostNewLiveTest do
       assert html =~ "Europe/London"
     end
 
+    test "includes visibility select with all four options", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/posts/new")
+      assert html =~ ~s(name="post[visibility]")
+      assert html =~ "Public — everyone"
+      assert html =~ "Instance — signed-in users on this site"
+      assert html =~ "Followers — your followers"
+      assert html =~ "Private — just you"
+    end
+
     test "shows companions and photos sections", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/posts/new")
       assert html =~ "Companions"
@@ -254,6 +263,54 @@ defmodule RevixWeb.PostNewLiveTest do
 
       render_click(view, "confirm_publish", %{})
 
+      assert_enqueued(worker: Revix.Workers.DeliverEntryWorker)
+    end
+
+    test "confirm_publish stores the chosen visibility and skips delivery for private posts", %{
+      conn: conn,
+      person: person
+    } do
+      {:ok, view, _html} = live(conn, ~p"/posts/new")
+
+      render_submit(view, "submit", %{
+        "post" => %{
+          "content" => "Secret",
+          "published_tz" => "UTC",
+          "visibility" => "private"
+        },
+        "action" => "publish"
+      })
+
+      {:error, {:redirect, _}} = render_click(view, "confirm_publish", %{})
+
+      [post] =
+        Revix.Entries.get_recent_posts(50, scope: Revix.People.Scope.for_person(person))
+
+      assert post.visibility == :private
+      refute_enqueued(worker: Revix.Workers.DeliverEntryWorker)
+    end
+
+    test "confirm_publish stores followers visibility and enqueues delivery", %{
+      conn: conn,
+      person: person
+    } do
+      {:ok, view, _html} = live(conn, ~p"/posts/new")
+
+      render_submit(view, "submit", %{
+        "post" => %{
+          "content" => "For followers",
+          "published_tz" => "UTC",
+          "visibility" => "followers"
+        },
+        "action" => "publish"
+      })
+
+      {:error, {:redirect, _}} = render_click(view, "confirm_publish", %{})
+
+      [post] =
+        Revix.Entries.get_recent_posts(50, scope: Revix.People.Scope.for_person(person))
+
+      assert post.visibility == :followers
       assert_enqueued(worker: Revix.Workers.DeliverEntryWorker)
     end
 

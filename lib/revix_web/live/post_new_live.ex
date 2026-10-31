@@ -26,6 +26,7 @@ defmodule RevixWeb.PostNewLive do
         |> assign(:place_query, "")
         |> assign(:place_results, [])
         |> assign(:timezones, Tzdata.zone_list() |> Enum.sort())
+        |> assign(:visibility_options, visibility_options())
         |> assign(:upload_captions, %{})
         |> assign(:upload_order, [])
         |> assign(:show_publish_modal, false)

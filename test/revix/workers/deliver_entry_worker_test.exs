@@ -378,4 +378,99 @@ defmodule Revix.Workers.DeliverEntryWorkerTest do
       assert activity["id"] == checkin.uri <> "#create"
     end
   end
+
+  describe "perform/1 with post visibility" do
+    defp person_with_key do
+      person = person_fixture()
+
+      Repo.update!(
+        Ecto.Changeset.change(Repo.get!(Revix.People.Person, person.id),
+          private_key: private_key_pem()
+        )
+      )
+
+      Repo.get!(Revix.People.Person, person.id)
+    end
+
+    defp capture_deliveries do
+      delivered = Agent.start_link(fn -> [] end) |> elem(1)
+
+      Req.Test.stub(:federation, fn conn ->
+        case conn.method do
+          "POST" ->
+            {:ok, body, conn} = Plug.Conn.read_body(conn)
+            Agent.update(delivered, fn acc -> [Jason.decode!(body) | acc] end)
+
+            conn
+            |> Plug.Conn.put_resp_header("content-type", "text/plain")
+            |> Plug.Conn.send_resp(202, "")
+
+          "GET" ->
+            Req.Test.json(conn, remote_actor_map())
+        end
+      end)
+
+      delivered
+    end
+
+    test "public post is addressed to Public with followers in cc" do
+      delivered = capture_deliveries()
+      person = person_with_key()
+      post = post_fixture(%{author_uri: person.uri, visibility: :public})
+      insert_accepted_follow(remote_actor_uri(), person.uri)
+
+      assert :ok = perform(post.id, "Create")
+
+      [activity] = Agent.get(delivered, & &1)
+      assert activity["to"] == ["https://www.w3.org/ns/activitystreams#Public"]
+
+      assert activity["cc"] == [
+               RevixWeb.CanonicalRoutes.person_followers_url(person.id)
+             ]
+
+      assert activity["object"]["to"] == ["https://www.w3.org/ns/activitystreams#Public"]
+    end
+
+    test "followers post is addressed to the followers collection, Mastodon-style" do
+      delivered = capture_deliveries()
+      person = person_with_key()
+      post = post_fixture(%{author_uri: person.uri, visibility: :followers})
+      insert_accepted_follow(remote_actor_uri(), person.uri)
+
+      assert :ok = perform(post.id, "Create")
+
+      [activity] = Agent.get(delivered, & &1)
+
+      assert activity["to"] == [
+               RevixWeb.CanonicalRoutes.person_followers_url(person.id)
+             ]
+
+      assert activity["cc"] == ["https://www.w3.org/ns/activitystreams#Public"]
+
+      assert activity["object"]["to"] == [
+               RevixWeb.CanonicalRoutes.person_followers_url(person.id)
+             ]
+    end
+
+    test "private post is not delivered at all" do
+      delivered = capture_deliveries()
+      person = person_with_key()
+      post = post_fixture(%{author_uri: person.uri, visibility: :private})
+      insert_accepted_follow(remote_actor_uri(), person.uri)
+
+      assert :ok = perform(post.id, "Create")
+      assert :ok = perform(post.id, "Update")
+      assert Agent.get(delivered, & &1) == []
+    end
+
+    test "instance post is not delivered to remote inboxes" do
+      delivered = capture_deliveries()
+      person = person_with_key()
+      post = post_fixture(%{author_uri: person.uri, visibility: :instance})
+      insert_accepted_follow(remote_actor_uri(), person.uri)
+
+      assert :ok = perform(post.id, "Create")
+      assert Agent.get(delivered, & &1) == []
+    end
+  end
 end

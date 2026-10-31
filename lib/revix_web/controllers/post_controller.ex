@@ -10,7 +10,7 @@ defmodule RevixWeb.PostController do
   action_fallback RevixWeb.FallbackController
 
   def index(conn, _params) do
-    posts = Entries.get_recent_posts()
+    posts = Entries.get_recent_posts(50, scope: conn.assigns[:current_scope])
     drafts = get_author_drafts(conn.assigns.current_scope)
     index_by_format(conn, posts, drafts, get_format(conn))
   end
@@ -52,7 +52,9 @@ defmodule RevixWeb.PostController do
   end
 
   def show(conn, %{"id" => id} = params) do
-    with {:ok, post} <- Entries.get_local_post(id) do
+    # The federation pipeline has no current_scope, so anonymous fetchers of
+    # the activity format only ever see public posts.
+    with {:ok, post} <- Entries.get_local_post(id, conn.assigns[:current_scope]) do
       show_by_format(conn, post, params, get_format(conn))
     end
   end
@@ -128,7 +130,7 @@ defmodule RevixWeb.PostController do
     scope = conn.assigns.current_scope
 
     if scope && scope.role == :owner do
-      do_retransform_images(conn, Entries.get_local_post(id))
+      do_retransform_images(conn, Entries.get_local_post(id, scope))
     else
       conn
       |> put_flash(:error, "Not authorized.")

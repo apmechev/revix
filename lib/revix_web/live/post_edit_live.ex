@@ -16,7 +16,7 @@ defmodule RevixWeb.PostEditLive do
   def mount(%{"id" => id}, _session, socket) do
     scope = socket.assigns.current_scope
 
-    case Entries.get_local_post(id) do
+    case Entries.get_local_post(id, scope) do
       {:ok, post} ->
         cond do
           post.author_uri != scope.person.uri ->
@@ -43,6 +43,7 @@ defmodule RevixWeb.PostEditLive do
               socket
               |> assign(:post, post)
               |> assign(:timezones, Tzdata.zone_list() |> Enum.sort())
+              |> assign(:visibility_options, visibility_options())
               |> assign(
                 :form,
                 Entries.change_post_for_update(post, scope.role) |> to_form(as: :post)
@@ -191,7 +192,7 @@ defmodule RevixWeb.PostEditLive do
 
     captions = Map.delete(socket.assigns.image_captions, image_id)
     order = List.delete(socket.assigns.existing_image_order, image_id)
-    {:ok, updated_post} = Entries.get_local_post(post.id)
+    {:ok, updated_post} = Entries.get_local_post(post.id, scope)
 
     {:noreply,
      socket

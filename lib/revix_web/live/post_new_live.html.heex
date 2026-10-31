@@ -35,6 +35,13 @@
             label="Time Zone"
             options={@timezones}
           />
+
+          <.input
+            field={@post_form[:visibility]}
+            type="select"
+            label="Visibility"
+            options={@visibility_options}
+          />
         </div>
 
         <%!-- Place Section --%>

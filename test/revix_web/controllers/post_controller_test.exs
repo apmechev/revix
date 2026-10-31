@@ -8,6 +8,7 @@ defmodule RevixWeb.PostControllerTest do
 
   alias Revix.Likes
   alias Revix.Media
+  alias RevixWeb.CanonicalRoutes
 
   # ── GET /posts ────────────────────────────────────────────────────────────────
 
@@ -1147,6 +1148,133 @@ defmodule RevixWeb.PostControllerTest do
       draft = draft_post_fixture(%{author_uri: author.uri})
       conn = get(conn, "/posts/#{draft.id}")
       assert conn.status == 404
+    end
+  end
+
+  describe "post visibility" do
+    setup :register_and_log_in_person
+
+    defp dated_post(attrs) do
+      post_fixture(
+        Map.merge(%{published_at_local: ~N[2026-05-10 12:00:00], published_tz: "UTC"}, attrs)
+      )
+    end
+
+    test "GET /posts index hides non-public posts from anonymous visitors" do
+      author = person_fixture()
+      dated_post(%{author_uri: author.uri, name: "PublicPostZZZ", visibility: :public})
+      dated_post(%{author_uri: author.uri, name: "InstancePostZZZ", visibility: :instance})
+      dated_post(%{author_uri: author.uri, name: "FollowersPostZZZ", visibility: :followers})
+      dated_post(%{author_uri: author.uri, name: "PrivatePostZZZ", visibility: :private})
+
+      html = html_response(get(build_conn(), ~p"/posts"), 200)
+      assert html =~ "PublicPostZZZ"
+      refute html =~ "InstancePostZZZ"
+      refute html =~ "FollowersPostZZZ"
+      refute html =~ "PrivatePostZZZ"
+    end
+
+    test "GET /posts index shows instance posts to any signed-in user but not followers/private",
+         %{conn: conn} do
+      author = person_fixture()
+      dated_post(%{author_uri: author.uri, name: "InstancePostZZZ", visibility: :instance})
+      dated_post(%{author_uri: author.uri, name: "FollowersPostZZZ", visibility: :followers})
+      dated_post(%{author_uri: author.uri, name: "PrivatePostZZZ", visibility: :private})
+
+      html = html_response(get(conn, ~p"/posts"), 200)
+      assert html =~ "InstancePostZZZ"
+      refute html =~ "FollowersPostZZZ"
+      refute html =~ "PrivatePostZZZ"
+    end
+
+    test "GET /posts index shows followers post to a follower only", %{
+      conn: conn,
+      scope: scope
+    } do
+      author = person_fixture()
+      {:ok, _} = Revix.Follows.follow(scope, author.uri)
+      dated_post(%{author_uri: author.uri, name: "FollowersPostZZZ", visibility: :followers})
+      dated_post(%{author_uri: author.uri, name: "PrivatePostZZZ", visibility: :private})
+
+      html = html_response(get(conn, ~p"/posts"), 200)
+      assert html =~ "FollowersPostZZZ"
+      refute html =~ "PrivatePostZZZ"
+    end
+
+    test "GET /posts/:id returns 404 to anonymous visitors for non-public posts" do
+      author = person_fixture()
+
+      for visibility <- [:instance, :followers, :private] do
+        post = dated_post(%{author_uri: author.uri, visibility: visibility})
+        conn = get(build_conn(), ~p"/posts/#{post.id}")
+        assert conn.status == 404, "expected 404 for #{visibility} post"
+      end
+    end
+
+    test "GET /posts/:id returns 200 to anonymous visitors for public posts" do
+      post = dated_post(%{name: "PublicPostZZZ", visibility: :public})
+      conn = get(build_conn(), CanonicalRoutes.post_path(post))
+      assert html_response(conn, 200) =~ "PublicPostZZZ"
+    end
+
+    test "GET /posts/:id activity format returns 404 to anonymous fetchers for non-public posts" do
+      author = person_fixture()
+      post = dated_post(%{author_uri: author.uri, visibility: :followers})
+
+      conn =
+        build_conn()
+        |> put_req_header("accept", "application/activity+json")
+        |> get(~p"/posts/#{post.id}")
+
+      assert conn.status == 404
+    end
+
+    test "GET /posts/:id activity format returns 200 for public posts" do
+      post = dated_post(%{visibility: :public})
+
+      conn =
+        build_conn()
+        |> put_req_header("accept", "application/activity+json")
+        |> get(~p"/posts/#{post.id}")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "content-type") |> hd() =~ "application/activity+json"
+    end
+
+    test "GET /posts/:id for signed-in non-follower: 200 instance, 404 followers/private",
+         %{conn: conn} do
+      author = person_fixture()
+      instance = dated_post(%{author_uri: author.uri, visibility: :instance})
+      followers = dated_post(%{author_uri: author.uri, visibility: :followers})
+      private = dated_post(%{author_uri: author.uri, visibility: :private})
+
+      assert html_response(get(conn, CanonicalRoutes.post_path(instance)), 200)
+      assert get(conn, ~p"/posts/#{followers.id}").status == 404
+      assert get(conn, ~p"/posts/#{private.id}").status == 404
+    end
+
+    test "GET /posts/:id returns 200 to a follower for a followers-only post", %{
+      conn: conn,
+      scope: scope
+    } do
+      author = person_fixture()
+      {:ok, _} = Revix.Follows.follow(scope, author.uri)
+
+      post =
+        dated_post(%{author_uri: author.uri, name: "FollowersPostZZZ", visibility: :followers})
+
+      conn = get(conn, CanonicalRoutes.post_path(post))
+      assert html_response(conn, 200) =~ "FollowersPostZZZ"
+    end
+
+    test "GET /posts/:id returns 200 to the author for a private post", %{
+      conn: conn,
+      person: person
+    } do
+      post = dated_post(%{author_uri: person.uri, name: "PrivatePostZZZ", visibility: :private})
+
+      conn = get(conn, CanonicalRoutes.post_path(post))
+      assert html_response(conn, 200) =~ "PrivatePostZZZ"
     end
   end
 end

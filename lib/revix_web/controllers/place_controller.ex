@@ -40,7 +40,7 @@ defmodule RevixWeb.PlaceController do
     with {:ok, place} <- Places.get_local_place(id) do
       nearby = Places.get_local_places_near(place)
       checkins = Entries.get_local_checkins_for_place(place)
-      posts = Entries.get_local_posts_for_place(place)
+      posts = Entries.get_local_posts_for_place(place, scope: conn.assigns[:current_scope])
       show_by_format(conn, place, checkins, posts, nearby, params["slug"], get_format(conn))
     end
   end

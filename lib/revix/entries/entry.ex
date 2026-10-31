@@ -3,6 +3,7 @@ defmodule Revix.Entries.Entry do
   import Ecto.Changeset
   alias Revix.Ecto.EntryType
   alias Revix.Ecto.Origin
+  alias Revix.Ecto.Visibility
   alias Revix.EntryPeople.EntryPerson
   alias Revix.EntryPlaces.EntryPlace
   alias Revix.People.Person
@@ -22,6 +23,10 @@ defmodule Revix.Entries.Entry do
     field :context, :string
 
     field :origin, Origin
+
+    # Who may see this entry. Only meaningful for local posts; defaults to
+    # :public so historical entries remain public.
+    field :visibility, Visibility, default: :public
 
     # Published datetime - all three components
     field :published_at_utc, :utc_datetime
@@ -68,16 +73,18 @@ defmodule Revix.Entries.Entry do
 
   def draft_post_changeset(entry, attrs, _role) do
     entry
-    |> cast(attrs, [:content, :name])
+    |> cast(attrs, [:content, :name, :visibility])
+    |> validate_visibility()
     |> maybe_convert_content_to_html()
     |> set_context()
   end
 
   def publish_post_changeset(entry, attrs, _role) do
     entry
-    |> cast(attrs, [:content, :name, :published_tz])
+    |> cast(attrs, [:content, :name, :published_tz, :visibility])
     |> validate_required([:published_tz])
     |> validate_timezone(:published_tz)
+    |> validate_visibility()
     |> maybe_convert_content_to_html()
     |> set_post_published_at()
     |> set_context()
@@ -85,16 +92,18 @@ defmodule Revix.Entries.Entry do
 
   def publish_draft_post_changeset(entry, attrs, _role) do
     entry
-    |> cast(attrs, [:content, :name, :published_tz])
+    |> cast(attrs, [:content, :name, :published_tz, :visibility])
     |> validate_required([:published_tz])
     |> validate_timezone(:published_tz)
+    |> validate_visibility()
     |> maybe_convert_content_to_html()
     |> set_post_published_at()
   end
 
   def update_post_changeset(entry, attrs, role \\ :user) do
     entry
-    |> cast(attrs, [:content, :name])
+    |> cast(attrs, [:content, :name, :visibility])
+    |> validate_visibility()
     |> maybe_convert_content_to_html()
     |> cast_post_datetime_fields(attrs, role)
     |> set_modified_at()
@@ -256,6 +265,10 @@ defmodule Revix.Entries.Entry do
     entry
     |> change()
     |> put_change(:tombstoned_at, DateTime.utc_now(:second))
+  end
+
+  defp validate_visibility(changeset) do
+    validate_inclusion(changeset, :visibility, Visibility.values())
   end
 
   defp validate_timezone(changeset, field) do

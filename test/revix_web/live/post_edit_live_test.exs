@@ -599,7 +599,11 @@ defmodule RevixWeb.PostEditLiveTest do
       assert html =~ ~s(name="post[published_tz]")
     end
 
-    test "save as draft updates content without setting published_at", %{conn: conn, draft: draft} do
+    test "save as draft updates content without setting published_at", %{
+      conn: conn,
+      person: person,
+      draft: draft
+    } do
       {:ok, view, _html} = live(conn, ~p"/posts/#{draft.id}/edit")
 
       {:error, {:redirect, %{to: path}}} =
@@ -609,7 +613,7 @@ defmodule RevixWeb.PostEditLiveTest do
         })
 
       assert path =~ ~r|^/posts/[^/]+$|
-      {:ok, updated} = Entries.get_local_post(draft.id)
+      {:ok, updated} = Entries.get_local_post(draft.id, person_scope_fixture(person))
       assert updated.content == "Updated draft"
       assert is_nil(updated.published_at_utc)
     end
@@ -629,7 +633,7 @@ defmodule RevixWeb.PostEditLiveTest do
         })
 
       assert path =~ ~r|^/posts/[^/]+$|
-      {:ok, updated} = Entries.get_local_post(draft.id)
+      {:ok, updated} = Entries.get_local_post(draft.id, person_scope_fixture(person))
       assert updated.content == "Updated"
       assert is_nil(updated.published_at_utc)
     end
@@ -655,7 +659,11 @@ defmodule RevixWeb.PostEditLiveTest do
       assert html =~ "Publish this post?"
     end
 
-    test "cancel_publish hides modal without publishing", %{conn: conn, draft: draft} do
+    test "cancel_publish hides modal without publishing", %{
+      conn: conn,
+      person: person,
+      draft: draft
+    } do
       {:ok, view, _html} = live(conn, ~p"/posts/#{draft.id}/edit")
 
       render_submit(view, "submit", %{
@@ -666,7 +674,7 @@ defmodule RevixWeb.PostEditLiveTest do
       html = render_click(view, "cancel_publish", %{})
       refute html =~ "Publish this post?"
 
-      {:ok, unchanged} = Entries.get_local_post(draft.id)
+      {:ok, unchanged} = Entries.get_local_post(draft.id, person_scope_fixture(person))
       assert is_nil(unchanged.published_at_utc)
     end
 
@@ -705,7 +713,11 @@ defmodule RevixWeb.PostEditLiveTest do
       )
     end
 
-    test "confirm_publish with missing timezone shows form error", %{conn: conn, draft: draft} do
+    test "confirm_publish with missing timezone shows form error", %{
+      conn: conn,
+      person: person,
+      draft: draft
+    } do
       {:ok, view, _html} = live(conn, ~p"/posts/#{draft.id}/edit")
 
       render_submit(view, "submit", %{
@@ -717,7 +729,7 @@ defmodule RevixWeb.PostEditLiveTest do
       refute html =~ "Publish this post?"
       assert html =~ "Edit Post"
 
-      {:ok, unchanged} = Entries.get_local_post(draft.id)
+      {:ok, unchanged} = Entries.get_local_post(draft.id, person_scope_fixture(person))
       assert is_nil(unchanged.published_at_utc)
     end
   end
@@ -739,6 +751,29 @@ defmodule RevixWeb.PostEditLiveTest do
     test "non-owner does not see timezone field on published post", %{conn: conn, post: post} do
       {:ok, _view, html} = live(conn, ~p"/posts/#{post.id}/edit")
       refute html =~ ~s(name="post[published_tz]")
+    end
+
+    test "shows visibility select reflecting the post's current visibility", %{
+      conn: conn,
+      post: post
+    } do
+      {:ok, _view, html} = live(conn, ~p"/posts/#{post.id}/edit")
+      assert html =~ ~s(name="post[visibility]")
+
+      assert html =~
+               ~r/<option[^>]*value="public"[^>]*selected[^>]*>|<option[^>]*selected[^>]*value="public"[^>]*>/
+    end
+
+    test "saving changes the post's visibility", %{conn: conn, person: person, post: post} do
+      {:ok, view, _html} = live(conn, ~p"/posts/#{post.id}/edit")
+
+      {:error, {:redirect, _}} =
+        render_submit(view, "submit", %{
+          "post" => %{"content" => "Updated", "visibility" => "followers"}
+        })
+
+      {:ok, updated} = Entries.get_local_post(post.id, person_scope_fixture(person))
+      assert updated.visibility == :followers
     end
   end
 
