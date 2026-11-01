@@ -478,4 +478,37 @@ defmodule RevixWeb.FeedControllerTest do
       assert conn.status == 200
     end
   end
+
+  describe "visibility leaks" do
+    test "atom and rss feeds do not include non-public entries or likes on them" do
+      author = person_fixture()
+
+      private_post =
+        post_fixture(%{author_uri: author.uri, visibility: :private, content: "SecretPostZZZ"})
+
+      place = place_fixture()
+
+      private_checkin =
+        checkin_fixture(%{
+          place_uri: place.uri,
+          author_uri: author.uri,
+          visibility: :followers,
+          content: "SecretCheckinZZZ"
+        })
+
+      liker = person_fixture()
+      like_fixture(%{author_uri: liker.uri, object_uri: private_post.uri})
+      like_fixture(%{author_uri: liker.uri, object_uri: private_checkin.uri})
+
+      for path <- ["/feed.atom", "/feed.rss"] do
+        conn = get(build_conn(), path)
+        body = conn.resp_body
+        assert conn.status == 200
+        refute body =~ "SecretPostZZZ"
+        refute body =~ "SecretCheckinZZZ"
+        refute body =~ private_post.uri
+        refute body =~ private_checkin.uri
+      end
+    end
+  end
 end
