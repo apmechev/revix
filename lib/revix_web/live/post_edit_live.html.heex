@@ -38,12 +38,7 @@
             />
           </div>
 
-          <.input
-            field={@form[:visibility]}
-            type="select"
-            label="Visibility"
-            options={@visibility_options}
-          />
+          <.visibility_toggle field={@form[:visibility]} options={@visibility_options} />
         </div>
 
         <%!-- Place Section --%>

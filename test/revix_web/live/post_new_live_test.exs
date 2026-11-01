@@ -53,13 +53,14 @@ defmodule RevixWeb.PostNewLiveTest do
       assert html =~ "Europe/London"
     end
 
-    test "includes visibility select with all four options", %{conn: conn} do
+    test "includes visibility toggle with all four options", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/posts/new")
       assert html =~ ~s(name="post[visibility]")
-      assert html =~ "Public — everyone"
-      assert html =~ "Instance — signed-in users on this site"
-      assert html =~ "Followers — your followers"
-      assert html =~ "Private — just you"
+      assert html =~ ~s(data-visibility="public")
+      assert html =~ ~s(data-visibility-option="public")
+      assert html =~ ~s(data-visibility-option="instance")
+      assert html =~ ~s(data-visibility-option="followers")
+      assert html =~ ~s(data-visibility-option="private")
     end
 
     test "shows companions and photos sections", %{conn: conn} do
