@@ -2,7 +2,7 @@ defmodule RevixWeb.ActivityComponents do
   use Phoenix.Component
 
   import Phoenix.HTML, only: [raw: 1]
-  import RevixWeb.CoreComponents, only: [icon: 1, icon_link: 1]
+  import RevixWeb.CoreComponents, only: [icon: 1, icon_link: 1, input: 1]
   import RevixWeb.View.Helpers, only: [format_local_datetime: 3]
 
   alias Revix.Snippet
@@ -207,6 +207,52 @@ defmodule RevixWeb.ActivityComponents do
   defp visibility_icon(:followers), do: "hero-user-group"
   defp visibility_icon(:instance), do: "hero-server"
   defp visibility_icon(_), do: "hero-globe-alt"
+
+  @doc """
+  Segmented toggle for choosing an entry's visibility, styled like the
+  dark/light theme toggle: a pill with a sliding highlight whose position is
+  driven by the container's `data-visibility` attribute (pure CSS), plus a
+  hidden input bound to the form field so the value submits with the form.
+
+  `options` is a list of `{label, value, icon}` triples (see
+  `RevixWeb.Live.EntryHelpers.visibility_options/0`). The `VisibilityToggle`
+  JS hook moves the highlight on click and syncs the hidden input.
+  """
+  attr :field, Phoenix.HTML.FormField, required: true
+  attr :options, :list, required: true, doc: "list of {label, value, icon} triples"
+  attr :label, :string, default: "Visibility"
+
+  def visibility_toggle(assigns) do
+    assigns = assign(assigns, :value, to_string(assigns.field.value || "public"))
+
+    ~H"""
+    <div class="fieldset mb-2">
+      <label>
+        <span :if={@label} class="label mb-1">{@label}</span>
+        <div
+          id={"#{@field.id}-visibility-toggle"}
+          phx-hook="VisibilityToggle"
+          data-visibility={@value}
+          class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full"
+        >
+          <div class="absolute w-1/4 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-visibility=instance]_&]:left-1/4 [[data-visibility=followers]_&]:left-1/2 [[data-visibility=private]_&]:left-3/4 transition-[left]" />
+          <%= for {label, value, icon} <- @options do %>
+            <button
+              type="button"
+              data-visibility-option={value}
+              aria-pressed={to_string(@value == value)}
+              class="flex items-center justify-center gap-1 p-2 cursor-pointer w-1/4"
+            >
+              <.icon name={icon} class="size-4 opacity-75 hover:opacity-100" />
+              <span class="text-xs">{label}</span>
+            </button>
+          <% end %>
+        </div>
+        <.input field={@field} type="hidden" />
+      </label>
+    </div>
+    """
+  end
 
   attr :post, :map, required: true
 

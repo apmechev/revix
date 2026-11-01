@@ -753,15 +753,14 @@ defmodule RevixWeb.PostEditLiveTest do
       refute html =~ ~s(name="post[published_tz]")
     end
 
-    test "shows visibility select reflecting the post's current visibility", %{
+    test "shows visibility toggle reflecting the post's current visibility", %{
       conn: conn,
       post: post
     } do
       {:ok, _view, html} = live(conn, ~p"/posts/#{post.id}/edit")
       assert html =~ ~s(name="post[visibility]")
-
-      assert html =~
-               ~r/<option[^>]*value="public"[^>]*selected[^>]*>|<option[^>]*selected[^>]*value="public"[^>]*>/
+      assert html =~ ~s(data-visibility="public")
+      assert html =~ ~s(data-visibility-option="public" aria-pressed="true")
     end
 
     test "saving changes the post's visibility", %{conn: conn, person: person, post: post} do

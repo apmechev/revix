@@ -125,15 +125,14 @@ defmodule RevixWeb.CheckinEditLiveTest do
       {:ok, checkin: checkin}
     end
 
-    test "shows visibility select reflecting the checkin's current visibility", %{
+    test "shows visibility toggle reflecting the checkin's current visibility", %{
       conn: conn,
       checkin: checkin
     } do
       {:ok, _view, html} = live(conn, ~p"/checkins/#{checkin.id}/edit")
       assert html =~ ~s(name="checkin[visibility]")
-
-      assert html =~
-               ~r/<option[^>]*value="public"[^>]*selected[^>]*>|<option[^>]*selected[^>]*value="public"[^>]*>/
+      assert html =~ ~s(data-visibility="public")
+      assert html =~ ~s(data-visibility-option="public" aria-pressed="true")
     end
 
     test "saving changes the checkin's visibility", %{
@@ -144,9 +143,9 @@ defmodule RevixWeb.CheckinEditLiveTest do
       {:ok, view, _html} = live(conn, ~p"/checkins/#{checkin.id}/edit")
 
       {:error, {:redirect, %{to: _path}}} =
-        view
-        |> form("#edit-checkin-form", checkin: %{content: "Updated", visibility: "followers"})
-        |> render_submit()
+        render_submit(view, "submit", %{
+          "checkin" => %{"content" => "Updated", "visibility" => "followers"}
+        })
 
       {:ok, updated} =
         Entries.get_local_checkin(checkin.id, Revix.People.Scope.for_person(person))
