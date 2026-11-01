@@ -4,6 +4,7 @@ defmodule RevixWeb.PageControllerTest do
   import Revix.PeopleFixtures
   import Revix.PlacesFixtures
   import Revix.EntriesFixtures
+  import Revix.LikesFixtures
 
   alias Revix.Entries
   alias Revix.People.Scope
@@ -235,6 +236,38 @@ defmodule RevixWeb.PageControllerTest do
 
       assert response =~
                ~s(content="Revix is a federated place to log check-ins and share posts.")
+    end
+  end
+
+  describe "GET / visibility leaks" do
+    test "anonymous home page does not leak non-public entries, likes, or comments" do
+      author = person_fixture()
+
+      private_post =
+        post_fixture(%{author_uri: author.uri, visibility: :private, content: "SecretPostZZZ"})
+
+      place = place_fixture(%{slug: "secret-cafe"})
+
+      private_checkin =
+        checkin_fixture(%{
+          place_uri: place.uri,
+          author_uri: author.uri,
+          visibility: :instance,
+          content: "SecretCheckinZZZ"
+        })
+
+      author_scope = Scope.for_person(author)
+      comment = comment_fixture(author_scope, private_checkin)
+      liker = person_fixture()
+      like_fixture(%{author_uri: liker.uri, object_uri: private_post.uri})
+
+      conn = get(build_conn(), ~p"/")
+      body = html_response(conn, 200)
+      refute body =~ "SecretPostZZZ"
+      refute body =~ "SecretCheckinZZZ"
+      refute body =~ private_post.uri
+      refute body =~ private_checkin.uri
+      refute body =~ comment.uri
     end
   end
 end

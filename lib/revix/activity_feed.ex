@@ -1,5 +1,6 @@
 defmodule Revix.ActivityFeed do
   alias Revix.Entries
+  alias Revix.Entries.Entry
   alias Revix.Likes
 
   @doc """
@@ -11,7 +12,11 @@ defmodule Revix.ActivityFeed do
   def build_feed_activities(nil, limit) do
     checkins = Entries.get_recent_checkins(limit)
     posts = Entries.get_recent_posts(limit)
-    likes = Likes.get_recent_likes(limit, include_remote: false) |> Enum.reject(&note_like?/1)
+
+    likes =
+      Likes.get_recent_likes(limit, include_remote: false)
+      |> Enum.reject(&note_like?/1)
+      |> filter_visible_likes(nil)
 
     assemble(
       [checkin: checkins, post: posts, like: likes],
@@ -20,10 +25,14 @@ defmodule Revix.ActivityFeed do
   end
 
   def build_feed_activities(scope, limit) do
-    checkins = Entries.get_recent_checkins(limit)
+    checkins = Entries.get_recent_checkins(limit, scope: scope)
     posts = Entries.get_recent_posts(limit, scope: scope)
-    likes = Likes.get_recent_likes(limit, include_remote: true)
-    comments = Entries.get_recent_comments_for_feed(limit, include_replies: true)
+    likes = Likes.get_recent_likes(limit, include_remote: true) |> filter_visible_likes(scope)
+
+    comments =
+      Entries.get_recent_comments_for_feed(limit, include_replies: true)
+      |> filter_visible_comments(scope)
+
     drafts = get_drafts_for_scope(scope)
 
     assemble(
@@ -44,8 +53,15 @@ defmodule Revix.ActivityFeed do
     probe = page_size + 1
     checkins = Entries.get_recent_checkins(probe, before: cursor, scope: scope)
     posts = Entries.get_recent_posts(probe, before: cursor, scope: scope)
-    likes = Likes.get_recent_likes(probe, include_remote: true, before: cursor)
-    comments = Entries.get_recent_comments_for_feed(probe, include_replies: true, before: cursor)
+
+    likes =
+      Likes.get_recent_likes(probe, include_remote: true, before: cursor)
+      |> filter_visible_likes(scope)
+
+    comments =
+      Entries.get_recent_comments_for_feed(probe, include_replies: true, before: cursor)
+      |> filter_visible_comments(scope)
+
     drafts = if is_nil(cursor), do: get_drafts_for_scope(scope), else: []
 
     assemble_page(
@@ -65,7 +81,9 @@ defmodule Revix.ActivityFeed do
     posts = Entries.get_recent_posts_for_person(person, limit)
 
     likes =
-      Likes.get_recent_likes_for_person(person, limit) |> Enum.reject(&note_like?/1)
+      Likes.get_recent_likes_for_person(person, limit)
+      |> Enum.reject(&note_like?/1)
+      |> filter_visible_likes(nil)
 
     assemble(
       [checkin: checkins, post: posts, like: likes],
@@ -76,10 +94,13 @@ defmodule Revix.ActivityFeed do
   def build_person_activities(person, scope, limit) do
     checkins = Entries.get_recent_checkins_for_person(person, limit, scope: scope)
     posts = Entries.get_recent_posts_for_person(person, limit, scope: scope)
-    likes = Likes.get_recent_likes_for_person(person, limit)
+
+    likes =
+      Likes.get_recent_likes_for_person(person, limit) |> filter_visible_likes(scope)
 
     comments =
       Entries.get_recent_comments_for_person_feed(person, limit, include_replies: true)
+      |> filter_visible_comments(scope)
 
     drafts = get_person_drafts_for_scope(person, scope)
 
@@ -98,13 +119,17 @@ defmodule Revix.ActivityFeed do
     probe = page_size + 1
     checkins = Entries.get_recent_checkins_for_person(person, probe, before: cursor, scope: scope)
     posts = Entries.get_recent_posts_for_person(person, probe, before: cursor, scope: scope)
-    likes = Likes.get_recent_likes_for_person(person, probe, before: cursor)
+
+    likes =
+      Likes.get_recent_likes_for_person(person, probe, before: cursor)
+      |> filter_visible_likes(scope)
 
     comments =
       Entries.get_recent_comments_for_person_feed(person, probe,
         include_replies: true,
         before: cursor
       )
+      |> filter_visible_comments(scope)
 
     drafts = if is_nil(cursor), do: get_person_drafts_for_scope(person, scope), else: []
 
@@ -191,6 +216,41 @@ defmodule Revix.ActivityFeed do
 
   defp note_like?(%{object: %{type: :note}}), do: true
   defp note_like?(_), do: false
+
+  @doc """
+  Returns whether a like should appear in `scope`'s feed: the liked object —
+  or, for likes on notes, the note's root entry — must be visible to the scope.
+  Likes on remote objects (nil object) are always visible.
+  """
+  def like_visible?(%{object: %Entry{} = object}, scope),
+    do: entry_visible_for_feed?(object, scope)
+
+  def like_visible?(_like, _scope), do: true
+
+  @doc """
+  Returns whether a comment/reply should appear in `scope`'s feed, based on
+  the visibility of its root entry (checkin or post).
+  """
+  def comment_visible?(comment, scope) do
+    case comment_root(comment) do
+      nil -> true
+      root -> Entries.visible_to?(root, scope)
+    end
+  end
+
+  defp entry_visible_for_feed?(%Entry{type: :note} = note, scope) do
+    case comment_root(note) do
+      nil -> Entries.visible_to?(note, scope)
+      root -> Entries.visible_to?(root, scope)
+    end
+  end
+
+  defp entry_visible_for_feed?(%Entry{} = entry, scope), do: Entries.visible_to?(entry, scope)
+
+  defp filter_visible_likes(likes, scope), do: Enum.filter(likes, &like_visible?(&1, scope))
+
+  defp filter_visible_comments(comments, scope),
+    do: Enum.filter(comments, &comment_visible?(&1, scope))
 
   defp resolve_root_uri_from_uri(uri) do
     case Entries.get_entry_by_uri(uri) do

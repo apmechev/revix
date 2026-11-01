@@ -738,4 +738,91 @@ defmodule Revix.ActivityFeedTest do
       assert has_more == false
     end
   end
+
+  describe "visibility filtering of likes and comments" do
+    defp like_uris(activities) do
+      for {:like, like} <- activities, do: like.object_uri
+    end
+
+    defp comment_uris(activities) do
+      for {:comment, c} <- activities, do: c.uri
+    end
+
+    test "anonymous feed excludes likes on non-public entries but keeps public ones" do
+      place = place_fixture()
+      public_checkin = checkin_fixture(%{place_uri: place.uri, visibility: :public})
+      private_checkin = checkin_fixture(%{place_uri: place.uri, visibility: :private})
+      liker = person_fixture()
+
+      like_fixture(%{author_uri: liker.uri, object_uri: public_checkin.uri})
+      like_fixture(%{author_uri: liker.uri, object_uri: private_checkin.uri})
+
+      activities = ActivityFeed.build_feed_activities(nil, 50)
+      assert public_checkin.uri in like_uris(activities)
+      refute private_checkin.uri in like_uris(activities)
+    end
+
+    test "authenticated feed hides likes on followers-only entries from non-followers" do
+      place = place_fixture()
+      author = person_fixture()
+      follower = person_fixture()
+      other = person_fixture()
+      {:ok, _} = Revix.Follows.follow(Scope.for_person(follower), author.uri)
+
+      followers_checkin =
+        checkin_fixture(%{place_uri: place.uri, author_uri: author.uri, visibility: :followers})
+
+      liker = person_fixture()
+      like_fixture(%{author_uri: liker.uri, object_uri: followers_checkin.uri})
+
+      refute followers_checkin.uri in like_uris(
+               ActivityFeed.build_feed_activities(Scope.for_person(other), 50)
+             )
+
+      assert followers_checkin.uri in like_uris(
+               ActivityFeed.build_feed_activities(Scope.for_person(follower), 50)
+             )
+    end
+
+    test "authenticated feed excludes comments on non-public entries from non-author viewers" do
+      place = place_fixture()
+      author = person_fixture()
+
+      private_checkin =
+        checkin_fixture(%{place_uri: place.uri, author_uri: author.uri, visibility: :private})
+
+      author_scope = Scope.for_person(author)
+      comment = create_comment(author_scope, private_checkin, %{"content" => "hi"})
+      other = person_fixture()
+
+      refute comment.uri in comment_uris(
+               ActivityFeed.build_feed_activities(Scope.for_person(other), 50)
+             )
+
+      assert comment.uri in comment_uris(
+               ActivityFeed.build_feed_activities(Scope.for_person(author), 50)
+             )
+    end
+
+    test "like_visible?/2 and comment_visible?/2 follow the object/root visibility" do
+      author = person_fixture()
+      private_post = post_fixture(%{author_uri: author.uri, visibility: :private})
+      public_post = post_fixture(%{author_uri: author.uri, visibility: :public})
+      author_scope = Scope.for_person(author)
+      comment = create_comment(author_scope, private_post, %{"content" => "c"})
+
+      refute ActivityFeed.like_visible?(%{object: private_post}, nil)
+
+      refute ActivityFeed.like_visible?(
+               %{object: private_post},
+               Scope.for_person(person_fixture())
+             )
+
+      assert ActivityFeed.like_visible?(%{object: private_post}, author_scope)
+      assert ActivityFeed.like_visible?(%{object: public_post}, nil)
+      assert ActivityFeed.like_visible?(%{object: nil}, nil)
+      refute ActivityFeed.comment_visible?(comment, nil)
+      assert ActivityFeed.comment_visible?(comment, author_scope)
+    end
+  end
 end

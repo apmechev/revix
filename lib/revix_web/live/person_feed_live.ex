@@ -129,10 +129,17 @@ defmodule RevixWeb.PersonFeedLive do
   def handle_info({:like_created, like}, socket) do
     scope = socket.assigns.current_scope
 
-    if like.author_uri == socket.assigns.person.uri and show_like?(like, scope) do
+    if like.author_uri == socket.assigns.person.uri do
       case Likes.get_like_with_object(like.id) do
-        nil -> {:noreply, socket}
-        full_like -> {:noreply, prepend_activity(socket, {:like, full_like})}
+        nil ->
+          {:noreply, socket}
+
+        full_like ->
+          if ActivityFeed.like_visible?(full_like, scope) do
+            {:noreply, prepend_activity(socket, {:like, full_like})}
+          else
+            {:noreply, socket}
+          end
       end
     else
       {:noreply, socket}
@@ -143,10 +150,14 @@ defmodule RevixWeb.PersonFeedLive do
   def handle_info({:comment_created, comment}, socket) do
     scope = socket.assigns.current_scope
 
-    if comment.author_uri == socket.assigns.person.uri and show_comment?(comment, scope) do
+    if comment.author_uri == socket.assigns.person.uri do
       case Entries.get_comment_for_feed(comment.id) do
         {:ok, full_comment} ->
-          {:noreply, prepend_activity(socket, {:comment, full_comment})}
+          if ActivityFeed.comment_visible?(full_comment, scope) do
+            {:noreply, prepend_activity(socket, {:comment, full_comment})}
+          else
+            {:noreply, socket}
+          end
 
         _ ->
           {:noreply, socket}
@@ -164,10 +175,6 @@ defmodule RevixWeb.PersonFeedLive do
 
   @impl true
   def handle_info(_msg, socket), do: {:noreply, socket}
-
-  defp show_like?(_like, _scope), do: true
-
-  defp show_comment?(_comment, _scope), do: true
 
   defp prepend_activity(socket, activity) do
     new_activities =
