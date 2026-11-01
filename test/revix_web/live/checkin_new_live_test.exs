@@ -36,13 +36,14 @@ defmodule RevixWeb.CheckinNewLiveTest do
       assert html =~ "Europe/London"
     end
 
-    test "includes visibility select with all four options", %{conn: conn} do
+    test "includes visibility toggle with all four options", %{conn: conn} do
       {:ok, _view, html} = live(conn, ~p"/checkins/new")
       assert html =~ ~s(name="checkin[visibility]")
-      assert html =~ "Public — everyone"
-      assert html =~ "Instance — signed-in users on this site"
-      assert html =~ "Followers — your followers"
-      assert html =~ "Private — just you"
+      assert html =~ ~s(data-visibility="public")
+      assert html =~ ~s(data-visibility-option="public")
+      assert html =~ ~s(data-visibility-option="instance")
+      assert html =~ ~s(data-visibility-option="followers")
+      assert html =~ ~s(data-visibility-option="private")
     end
 
     test "does not show manual place entry for non-owner", %{conn: conn} do
@@ -588,21 +589,20 @@ defmodule RevixWeb.CheckinNewLiveTest do
       {:ok, view, _html} = live(conn, ~p"/checkins/new")
       render_click(view, "select_manual", %{})
 
-      view
-      |> form("#checkin-form",
-        checkin: %{
-          starts_at_local: "2026-02-26T10:00",
-          starts_tz: "America/New_York",
-          content: "Hidden gem",
-          visibility: "private"
+      render_submit(view, "submit", %{
+        "checkin" => %{
+          "starts_at_local" => "2026-02-26T10:00",
+          "starts_tz" => "America/New_York",
+          "content" => "Hidden gem",
+          "visibility" => "private"
         },
-        place_manual: %{
-          name: "Secret Cafe",
-          latitude: "40.0",
-          longitude: "-105.0"
-        }
-      )
-      |> render_submit(%{action: "publish"})
+        "place_manual" => %{
+          "name" => "Secret Cafe",
+          "latitude" => "40.0",
+          "longitude" => "-105.0"
+        },
+        "action" => "publish"
+      })
 
       {:error, {:redirect, %{to: _path}}} = render_click(view, "confirm_publish", %{})
 

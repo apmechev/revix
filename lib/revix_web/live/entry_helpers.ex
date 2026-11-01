@@ -17,15 +17,15 @@ defmodule RevixWeb.Live.EntryHelpers do
   end
 
   @doc """
-  Select options for the post visibility field, as `{label, value}` pairs.
+  Options for the visibility toggle, as `{label, value, icon}` triples.
   Values are the string forms of `Revix.Ecto.Visibility`.
   """
   def visibility_options do
     [
-      {"Public — everyone", "public"},
-      {"Instance — signed-in users on this site", "instance"},
-      {"Followers — your followers", "followers"},
-      {"Private — just you", "private"}
+      {"Public", "public", "hero-globe-alt"},
+      {"Instance", "instance", "hero-server"},
+      {"Followers", "followers", "hero-user-group"},
+      {"Private", "private", "hero-lock-closed"}
     ]
   end
 
