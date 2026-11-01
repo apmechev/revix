@@ -146,6 +146,13 @@
             label="Time Zone"
             options={@timezones}
           />
+
+          <.input
+            field={@checkin_form[:visibility]}
+            type="select"
+            label="Visibility"
+            options={@visibility_options}
+          />
         </div>
 
         <%!-- Companions Section --%>

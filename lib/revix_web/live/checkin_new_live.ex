@@ -30,6 +30,7 @@ defmodule RevixWeb.CheckinNewLive do
       |> assign(:companion_query, "")
       |> assign(:companion_results, [])
       |> assign(:timezones, Tzdata.zone_list() |> Enum.sort())
+      |> assign(:visibility_options, visibility_options())
       |> assign(:can_create_place, scope.role in [:owner, :contributor])
       |> assign(:can_edit_place_coords, scope.role == :owner)
       |> assign(:auto_locate, scope.person.auto_locate_on_checkin)

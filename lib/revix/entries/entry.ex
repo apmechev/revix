@@ -142,7 +142,8 @@ defmodule Revix.Entries.Entry do
 
   def update_checkin_changeset(entry, attrs, role \\ :user) do
     entry
-    |> cast(attrs, [:content])
+    |> cast(attrs, [:content, :visibility])
+    |> validate_visibility()
     |> maybe_convert_content_to_html()
     |> cast_datetime_fields(attrs, role)
     |> set_modified_at()
@@ -234,9 +235,10 @@ defmodule Revix.Entries.Entry do
 
   def checkin_changeset(entry, attrs, role) do
     entry
-    |> cast(attrs, [:content, :starts_at_local, :starts_tz])
+    |> cast(attrs, [:content, :starts_at_local, :starts_tz, :visibility])
     |> validate_required([:starts_at_local, :starts_tz])
     |> validate_timezone(:starts_tz)
+    |> validate_visibility()
     |> maybe_convert_content_to_html()
     |> compute_starts_at_utc()
     |> validate_starts_at_window(role)
@@ -246,9 +248,10 @@ defmodule Revix.Entries.Entry do
 
   def draft_checkin_changeset(entry, attrs, role) do
     entry
-    |> cast(attrs, [:content, :starts_at_local, :starts_tz])
+    |> cast(attrs, [:content, :starts_at_local, :starts_tz, :visibility])
     |> validate_required([:starts_at_local, :starts_tz])
     |> validate_timezone(:starts_tz)
+    |> validate_visibility()
     |> maybe_convert_content_to_html()
     |> compute_starts_at_utc()
     |> validate_starts_at_window(role)
