@@ -241,7 +241,7 @@ defmodule RevixWeb.ActivityComponents do
               type="button"
               data-visibility-option={value}
               aria-pressed={to_string(@value == value)}
-              class="flex items-center justify-center gap-1 p-2 cursor-pointer w-1/4"
+              class="relative flex items-center justify-center gap-1 p-2 cursor-pointer w-1/4 aria-pressed:font-semibold aria-pressed:[&>svg]:opacity-100"
             >
               <.icon name={icon} class="size-4 opacity-75 hover:opacity-100" />
               <span class="text-xs">{label}</span>
