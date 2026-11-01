@@ -61,6 +61,11 @@ defmodule RevixWeb.PostNewLiveTest do
       assert html =~ ~s(data-visibility-option="instance")
       assert html =~ ~s(data-visibility-option="followers")
       assert html =~ ~s(data-visibility-option="private")
+
+      # The hidden input must live inside the phx-hook element, otherwise the
+      # hook cannot sync its value when an option is clicked.
+      assert html =~
+               ~r/<div[^>]*phx-hook="VisibilityToggle".*?<input type="hidden"[^>]*name="post\[visibility\]"[^>]*\/>/s
     end
 
     test "shows companions and photos sections", %{conn: conn} do
