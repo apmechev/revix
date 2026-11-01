@@ -44,6 +44,11 @@ defmodule RevixWeb.CheckinNewLiveTest do
       assert html =~ ~s(data-visibility-option="instance")
       assert html =~ ~s(data-visibility-option="followers")
       assert html =~ ~s(data-visibility-option="private")
+
+      # The hidden input must live inside the phx-hook element, otherwise the
+      # hook cannot sync its value when an option is clicked.
+      assert html =~
+               ~r/<div[^>]*phx-hook="VisibilityToggle".*?<input type="hidden"[^>]*name="checkin\[visibility\]"[^>]*\/>/s
     end
 
     test "does not show manual place entry for non-owner", %{conn: conn} do

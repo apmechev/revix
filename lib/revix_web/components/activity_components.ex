@@ -247,8 +247,9 @@ defmodule RevixWeb.ActivityComponents do
               <span class="text-xs">{label}</span>
             </button>
           <% end %>
+          <%!-- Must live inside the hook element so the hook can sync its value on click --%>
+          <.input field={@field} type="hidden" />
         </div>
-        <.input field={@field} type="hidden" />
       </label>
     </div>
     """
