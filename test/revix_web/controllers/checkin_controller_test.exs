@@ -972,4 +972,114 @@ defmodule RevixWeb.CheckinControllerTest do
       assert html_response(conn, 200) =~ ~s(class="p-author h-card")
     end
   end
+
+  describe "checkin visibility" do
+    setup :register_and_log_in_person
+
+    defp visible_checkin(visibility, author, place) do
+      checkin_fixture(%{author_uri: author.uri, place_uri: place.uri, visibility: visibility})
+    end
+
+    test "GET /checkins index lists only visible checkins per viewer" do
+      place = place_fixture()
+      other_place = place_fixture()
+      author = person_fixture()
+      follower = person_fixture()
+      {:ok, _} = Revix.Follows.follow(Revix.People.Scope.for_person(follower), author.uri)
+
+      visible_checkin(:public, author, place)
+      visible_checkin(:instance, author, place)
+      visible_checkin(:followers, author, place)
+      visible_checkin(:private, author, other_place)
+
+      # Anonymous: only the public checkin's place shows
+      html = html_response(get(build_conn(), ~p"/checkins"), 200)
+      assert html =~ place.name
+      refute html =~ other_place.name
+
+      # Signed-in non-follower: public + instance, still not private
+      conn = log_in_person(build_conn(), person_fixture())
+      html = html_response(get(conn, ~p"/checkins"), 200)
+      assert html =~ place.name
+      refute html =~ other_place.name
+
+      # Follower: followers checkin included (same place, so just assert no leak of private)
+      conn = log_in_person(build_conn(), follower)
+      html = html_response(get(conn, ~p"/checkins"), 200)
+      assert html =~ place.name
+      refute html =~ other_place.name
+    end
+
+    test "GET /checkins/:id returns 404 to anonymous visitors for non-public checkins" do
+      place = place_fixture(%{slug: "vis-cafe"})
+      author = person_fixture()
+
+      for visibility <- [:instance, :followers, :private] do
+        checkin = visible_checkin(visibility, author, place)
+        conn = get(build_conn(), ~p"/checkins/#{checkin.id}/vis-cafe")
+        assert conn.status == 404, "expected 404 for #{visibility} checkin"
+      end
+    end
+
+    test "GET /checkins/:id returns 200 to anonymous visitors for public checkins" do
+      place = place_fixture(%{slug: "pub-cafe"})
+      checkin = visible_checkin(:public, person_fixture(), place)
+
+      conn = get(build_conn(), ~p"/checkins/#{checkin.id}/pub-cafe")
+      assert html_response(conn, 200) =~ place.name
+    end
+
+    test "GET /checkins/:id activity format returns 404 to anonymous fetchers for non-public checkins" do
+      place = place_fixture(%{slug: "act-cafe"})
+      checkin = visible_checkin(:followers, person_fixture(), place)
+
+      conn =
+        build_conn()
+        |> put_req_header("accept", "application/activity+json")
+        |> get(~p"/checkins/#{checkin.id}")
+
+      assert conn.status == 404
+    end
+
+    test "GET /checkins/:id activity format returns 200 for public checkins" do
+      place = place_fixture(%{slug: "act-pub"})
+      checkin = visible_checkin(:public, person_fixture(), place)
+
+      conn =
+        build_conn()
+        |> put_req_header("accept", "application/activity+json")
+        |> get(~p"/checkins/#{checkin.id}")
+
+      assert conn.status == 200
+      assert get_resp_header(conn, "content-type") |> hd() =~ "application/activity+json"
+    end
+
+    test "GET /checkins/:id returns 200 to a follower for a followers-only checkin, 404 to others",
+         %{
+           conn: conn,
+           scope: scope
+         } do
+      place = place_fixture(%{slug: "foll-cafe"})
+      author = person_fixture()
+      {:ok, _} = Revix.Follows.follow(scope, author.uri)
+      checkin = visible_checkin(:followers, author, place)
+
+      conn = get(conn, ~p"/checkins/#{checkin.id}/foll-cafe")
+      assert html_response(conn, 200) =~ place.name
+
+      other_conn = log_in_person(build_conn(), person_fixture())
+      assert get(other_conn, ~p"/checkins/#{checkin.id}").status == 404
+    end
+
+    test "GET /checkins/:id returns 200 to the author for a private checkin", %{
+      conn: conn,
+      person: person
+    } do
+      place = place_fixture(%{slug: "priv-cafe"})
+      checkin = visible_checkin(:private, person, place)
+
+      conn = get(conn, ~p"/checkins/#{checkin.id}/priv-cafe")
+      assert html_response(conn, 200) =~ place.name
+    end
+  end
 end

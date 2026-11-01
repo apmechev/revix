@@ -50,6 +50,13 @@
             label="Content"
             rows="4"
           />
+
+          <.input
+            field={@form[:visibility]}
+            type="select"
+            label="Visibility"
+            options={@visibility_options}
+          />
         </div>
 
         <%!-- Photos Section --%>

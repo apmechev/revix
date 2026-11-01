@@ -159,6 +159,7 @@ defmodule RevixWeb.ActivityComponents do
         </span>
       </div>
     <% end %>
+    <.visibility_badge visibility={Map.get(@checkin, :visibility, :public)} />
     <.entry_snippet entry={@checkin} />
     """
   end

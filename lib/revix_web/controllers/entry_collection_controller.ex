@@ -34,12 +34,12 @@ defmodule RevixWeb.EntryCollectionController do
     end
   end
 
-  # The federation pipeline has no current_scope, so only public posts expose
+  # The federation pipeline has no current_scope, so only public entries expose
   # their likes/replies collections to anonymous fetchers.
   defp get_visible_entry(conn, id) do
     with {:ok, entry} <- Entries.get_entry(id) do
       if Entries.visible_to?(entry, conn.assigns[:current_scope]) and
-           (entry.type != :post or not is_nil(entry.published_at_utc)) do
+           (entry.type == :note or not is_nil(entry.published_at_utc)) do
         {:ok, entry}
       else
         {:error, :not_found}

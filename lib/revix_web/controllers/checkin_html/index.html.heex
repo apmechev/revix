@@ -9,6 +9,7 @@
           person={checkin.author}
           class="inline-block w-5 h-5 rounded-full align-middle mr-1"
         />{(checkin.place && checkin.place.name) || checkin.name || "Checkin"}
+        <.visibility_badge visibility={Map.get(checkin, :visibility, :public)} />
         <span class="text-base-content/60">
           {Calendar.strftime(checkin.starts_at_local, "%Y-%m-%d")}
         </span>

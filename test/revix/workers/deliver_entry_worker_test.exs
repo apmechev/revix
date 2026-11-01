@@ -472,5 +472,36 @@ defmodule Revix.Workers.DeliverEntryWorkerTest do
       assert :ok = perform(post.id, "Create")
       assert Agent.get(delivered, & &1) == []
     end
+
+    test "followers checkin is addressed to the followers collection, Mastodon-style" do
+      delivered = capture_deliveries()
+      person = person_with_key()
+      checkin = checkin_fixture(%{author_uri: person.uri, visibility: :followers})
+      insert_accepted_follow(remote_actor_uri(), person.uri)
+
+      assert :ok = perform(checkin.id, "Create")
+
+      [activity] = Agent.get(delivered, & &1)
+
+      assert activity["to"] == [
+               RevixWeb.CanonicalRoutes.person_followers_url(person.id)
+             ]
+
+      assert activity["cc"] == ["https://www.w3.org/ns/activitystreams#Public"]
+
+      assert activity["object"]["to"] == [
+               RevixWeb.CanonicalRoutes.person_followers_url(person.id)
+             ]
+    end
+
+    test "private checkin is not delivered at all" do
+      delivered = capture_deliveries()
+      person = person_with_key()
+      checkin = checkin_fixture(%{author_uri: person.uri, visibility: :private})
+      insert_accepted_follow(remote_actor_uri(), person.uri)
+
+      assert :ok = perform(checkin.id, "Create")
+      assert Agent.get(delivered, & &1) == []
+    end
   end
 end
