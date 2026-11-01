@@ -35,6 +35,7 @@
               @checkin.starts_at_utc
             )}
           </time>
+          <.visibility_badge visibility={Map.get(@checkin, :visibility, :public)} />
           <%= if @companions != [] do %>
             <span id="companion-section">
               with

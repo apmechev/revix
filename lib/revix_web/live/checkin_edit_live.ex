@@ -14,7 +14,7 @@ defmodule RevixWeb.CheckinEditLive do
   def mount(%{"id" => id}, _session, socket) do
     scope = socket.assigns.current_scope
 
-    case Entries.get_local_checkin(id) do
+    case Entries.get_local_checkin(id, scope) do
       {:ok, checkin} ->
         cond do
           checkin.author_uri != scope.person.uri ->
@@ -43,6 +43,7 @@ defmodule RevixWeb.CheckinEditLive do
               |> assign(:checkin_published, not is_nil(checkin.published_at_utc))
               |> assign(:can_edit_datetime, scope.role == :owner)
               |> assign(:timezones, Tzdata.zone_list() |> Enum.sort())
+              |> assign(:visibility_options, visibility_options())
               |> assign(
                 :form,
                 Entries.change_checkin_for_update(checkin, scope.role) |> to_form(as: :checkin)
@@ -142,7 +143,7 @@ defmodule RevixWeb.CheckinEditLive do
 
     captions = Map.delete(socket.assigns.image_captions, image_id)
     order = List.delete(socket.assigns.existing_image_order, image_id)
-    {:ok, updated_checkin} = Entries.get_local_checkin(checkin.id)
+    {:ok, updated_checkin} = Entries.get_local_checkin(checkin.id, scope)
 
     {:noreply,
      socket

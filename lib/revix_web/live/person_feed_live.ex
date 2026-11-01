@@ -98,7 +98,7 @@ defmodule RevixWeb.PersonFeedLive do
   @impl true
   def handle_info({:checkin_created, checkin}, socket) do
     if checkin.author_uri == socket.assigns.person.uri do
-      case Entries.get_local_checkin(checkin.id) do
+      case Entries.get_local_checkin(checkin.id, socket.assigns.current_scope) do
         {:ok, full_checkin} ->
           {:noreply, prepend_activity(socket, {:checkin, full_checkin})}
 

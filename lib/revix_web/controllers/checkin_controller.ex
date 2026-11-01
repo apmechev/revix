@@ -12,7 +12,7 @@ defmodule RevixWeb.CheckinController do
   action_fallback RevixWeb.FallbackController
 
   def index(conn, _) do
-    checkins = Entries.get_local_checkins()
+    checkins = Entries.get_local_checkins(scope: conn.assigns[:current_scope])
     index_by_format(conn, checkins, get_format(conn))
   end
 
@@ -52,9 +52,13 @@ defmodule RevixWeb.CheckinController do
   end
 
   def show(conn, %{"id" => id} = params) do
-    with {:ok, checkin} <- Entries.get_local_checkin(id) do
+    # The federation pipeline has no current_scope, so anonymous fetchers of
+    # the activity format only ever see public checkins.
+    scope = conn.assigns[:current_scope]
+
+    with {:ok, checkin} <- Entries.get_local_checkin(id, scope) do
       nearby = Places.get_local_places_near(checkin.place)
-      checkins = Entries.get_local_checkins_for_place(checkin.place)
+      checkins = Entries.get_local_checkins_for_place(checkin.place, scope: scope)
       other_checkins = Enum.reject(checkins, &(&1.id == checkin.id))
 
       show_by_format(
@@ -129,7 +133,7 @@ defmodule RevixWeb.CheckinController do
     scope = conn.assigns.current_scope
 
     if scope && scope.role == :owner do
-      do_retransform_images(conn, Entries.get_local_checkin(id))
+      do_retransform_images(conn, Entries.get_local_checkin(id, scope))
     else
       conn
       |> put_flash(:error, "Not authorized.")

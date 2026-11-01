@@ -116,6 +116,45 @@ defmodule RevixWeb.CheckinEditLiveTest do
     end
   end
 
+  describe "visibility on edit page" do
+    setup :register_and_log_in_person
+
+    setup %{person: person} do
+      place = place_fixture(%{slug: "test-cafe"})
+      checkin = checkin_fixture(%{place_uri: place.uri, author_uri: person.uri})
+      {:ok, checkin: checkin}
+    end
+
+    test "shows visibility select reflecting the checkin's current visibility", %{
+      conn: conn,
+      checkin: checkin
+    } do
+      {:ok, _view, html} = live(conn, ~p"/checkins/#{checkin.id}/edit")
+      assert html =~ ~s(name="checkin[visibility]")
+
+      assert html =~
+               ~r/<option[^>]*value="public"[^>]*selected[^>]*>|<option[^>]*selected[^>]*value="public"[^>]*>/
+    end
+
+    test "saving changes the checkin's visibility", %{
+      conn: conn,
+      person: person,
+      checkin: checkin
+    } do
+      {:ok, view, _html} = live(conn, ~p"/checkins/#{checkin.id}/edit")
+
+      {:error, {:redirect, %{to: _path}}} =
+        view
+        |> form("#edit-checkin-form", checkin: %{content: "Updated", visibility: "followers"})
+        |> render_submit()
+
+      {:ok, updated} =
+        Entries.get_local_checkin(checkin.id, Revix.People.Scope.for_person(person))
+
+      assert updated.visibility == :followers
+    end
+  end
+
   # ── Companion management (immediate) ─────────────────────────────────────────
 
   describe "companion management on edit page" do

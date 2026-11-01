@@ -15,7 +15,7 @@ defmodule Revix.Workers.DeliverEntryWorker do
       |> preload(^entry_preloads())
       |> Repo.one!()
 
-    # Private and instance-only posts are never delivered to remote inboxes:
+    # Private and instance-only entries are never delivered to remote inboxes:
     # their audience is the author / local signed-in users, who see them in-app.
     if federated?(entry) do
       with {:ok, actor} <- People.get_local_person_by_uri(entry.author_uri) do
@@ -34,7 +34,7 @@ defmodule Revix.Workers.DeliverEntryWorker do
     :ok
   end
 
-  defp federated?(%Entry{type: :post, visibility: visibility})
+  defp federated?(%Entry{visibility: visibility})
        when visibility in [:private, :instance],
        do: false
 

@@ -7,10 +7,11 @@ defmodule Revix.Entries do
   alias Revix.People.Person
   alias Revix.Places.Place
 
-  def get_local_checkins() do
+  def get_local_checkins(opts \\ []) do
     Entry
     |> local_checkins()
     |> published_checkins()
+    |> visible_entries(Keyword.get(opts, :scope))
     |> order_by_recency()
     |> with_checkin_preloads()
     |> Repo.all()
@@ -45,6 +46,7 @@ defmodule Revix.Entries do
     Entry
     |> local_checkins()
     |> published_checkins()
+    |> visible_entries(Keyword.get(opts, :scope))
     |> maybe_before_recency(Keyword.get(opts, :before))
     |> order_by_recency()
     |> maybe_limit(limit)
@@ -57,6 +59,7 @@ defmodule Revix.Entries do
     |> local_checkins()
     |> published_checkins()
     |> where([e], e.author_uri == ^person.uri)
+    |> visible_entries(Keyword.get(opts, :scope))
     |> maybe_before_recency(Keyword.get(opts, :before))
     |> order_by_recency()
     |> maybe_limit(limit)
@@ -68,7 +71,7 @@ defmodule Revix.Entries do
     Entry
     |> local_posts()
     |> published_posts()
-    |> visible_posts(Keyword.get(opts, :scope))
+    |> visible_entries(Keyword.get(opts, :scope))
     |> join(:inner, [e], ep in Revix.EntryPlaces.EntryPlace, on: ep.entry_uri == e.uri)
     |> where([e, ep], ep.place_uri == ^place.uri)
     |> order_by_published()
@@ -76,23 +79,24 @@ defmodule Revix.Entries do
     |> Repo.all()
   end
 
-  def get_local_checkins_for_place(%Place{} = place) do
+  def get_local_checkins_for_place(%Place{} = place, opts \\ []) do
     Entry
     |> local_checkins()
     |> published_checkins()
+    |> visible_entries(Keyword.get(opts, :scope))
     |> where([e], e.place_uri == ^place.uri)
     |> order_by_recency()
     |> with_checkin_preloads()
     |> Repo.all()
   end
 
-  def get_local_checkin(id) do
+  def get_local_checkin(id, scope \\ nil) do
     Entry
     |> local_checkins()
     |> where([e], e.id == ^id)
     |> with_checkin_preloads()
     |> Repo.one()
-    |> entry_ok_or_not_found()
+    |> entry_visible_or_not_found(scope)
   rescue
     Ecto.Query.CastError -> {:error, :not_found}
   end
@@ -189,7 +193,7 @@ defmodule Revix.Entries do
     Entry
     |> local_posts()
     |> published_posts()
-    |> visible_posts(Keyword.get(opts, :scope))
+    |> visible_entries(Keyword.get(opts, :scope))
     |> maybe_before_published(Keyword.get(opts, :before))
     |> order_by_published()
     |> maybe_limit(limit)
@@ -202,7 +206,7 @@ defmodule Revix.Entries do
     |> local_posts()
     |> published_posts()
     |> where([e], e.author_uri == ^person.uri)
-    |> visible_posts(Keyword.get(opts, :scope))
+    |> visible_entries(Keyword.get(opts, :scope))
     |> maybe_before_published(Keyword.get(opts, :before))
     |> order_by_published()
     |> maybe_limit(limit)
@@ -882,9 +886,9 @@ defmodule Revix.Entries do
 
   def visible_to?(%Entry{}, _scope), do: false
 
-  # Filters a post query to what `scope` may see. List queries calling this
-  # must already restrict to published, non-tombstoned posts.
-  defp visible_posts(query, %{person: %{uri: viewer_uri}}) do
+  # Filters an entry query to what `scope` may see. List queries calling this
+  # must already restrict to published, non-tombstoned entries.
+  defp visible_entries(query, %{person: %{uri: viewer_uri}}) do
     accepted_followings =
       from f in Revix.Follows.Follow,
         where:
@@ -900,7 +904,7 @@ defmodule Revix.Entries do
     )
   end
 
-  defp visible_posts(query, _scope) do
+  defp visible_entries(query, _scope) do
     where(query, [e], e.visibility == :public)
   end
 
@@ -999,8 +1003,8 @@ defmodule Revix.Entries do
   # here exactly once (LiveView flows call it after their transaction commits via
   # `enqueue_delivery/2`; simpler flows via `maybe_enqueue_create/3`), so the
   # subscriber-notification trigger lives here too.
-  # Private posts are never federated nor announced to subscribers.
-  defp enqueue_deliver_entry(%Entry{type: :post, visibility: :private}, _type), do: :ok
+  # Private entries are never federated nor announced to subscribers.
+  defp enqueue_deliver_entry(%Entry{visibility: :private}, _type), do: :ok
 
   defp enqueue_deliver_entry(entry, type) do
     %{"entry_id" => entry.id, "activity_type" => type}

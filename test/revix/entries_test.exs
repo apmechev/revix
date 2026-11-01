@@ -3370,4 +3370,124 @@ defmodule Revix.EntriesTest do
       assert_enqueued(worker: Revix.Workers.DeliverEntryWorker, args: %{"entry_id" => post.id})
     end
   end
+
+  describe "checkin visibility" do
+    defp checkin_with(visibility, author) do
+      place = place_fixture()
+      checkin_fixture(%{author_uri: author.uri, place_uri: place.uri, visibility: visibility})
+    end
+
+    test "get_recent_checkins/2 filters by scope" do
+      author = person_fixture()
+      follower = person_fixture()
+      other = person_fixture()
+      {:ok, _} = Revix.Follows.follow(Scope.for_person(follower), author.uri)
+
+      public = checkin_with(:public, author)
+      instance = checkin_with(:instance, author)
+      followers = checkin_with(:followers, author)
+      private = checkin_with(:private, author)
+
+      ids = fn scope ->
+        scope
+        |> then(&Entries.get_recent_checkins(50, scope: &1))
+        |> Enum.map(& &1.id)
+        |> Enum.sort()
+      end
+
+      assert ids.(nil) == [public.id]
+      assert ids.(Scope.for_person(other)) == Enum.sort([public.id, instance.id])
+
+      assert ids.(Scope.for_person(follower)) ==
+               Enum.sort([public.id, instance.id, followers.id])
+
+      assert ids.(Scope.for_person(author)) ==
+               Enum.sort([public.id, instance.id, followers.id, private.id])
+    end
+
+    test "get_local_checkin/2 access matrix" do
+      author = person_fixture()
+      follower = person_fixture()
+      other = person_fixture()
+      {:ok, _} = Revix.Follows.follow(Scope.for_person(follower), author.uri)
+
+      public = checkin_with(:public, author)
+      instance = checkin_with(:instance, author)
+      followers = checkin_with(:followers, author)
+      private = checkin_with(:private, author)
+
+      assert {:ok, _} = Entries.get_local_checkin(public.id)
+      assert {:error, :not_found} = Entries.get_local_checkin(instance.id)
+      assert {:ok, _} = Entries.get_local_checkin(instance.id, Scope.for_person(other))
+      assert {:error, :not_found} = Entries.get_local_checkin(followers.id)
+
+      assert {:error, :not_found} =
+               Entries.get_local_checkin(followers.id, Scope.for_person(other))
+
+      assert {:ok, _} = Entries.get_local_checkin(followers.id, Scope.for_person(follower))
+      assert {:error, :not_found} = Entries.get_local_checkin(private.id)
+
+      assert {:error, :not_found} =
+               Entries.get_local_checkin(private.id, Scope.for_person(follower))
+
+      assert {:ok, _} = Entries.get_local_checkin(private.id, Scope.for_person(author))
+    end
+
+    test "get_local_checkins_for_place/2 filters by scope" do
+      author = person_fixture()
+      other = person_fixture()
+      place = place_fixture()
+
+      public =
+        checkin_fixture(%{author_uri: author.uri, place_uri: place.uri, visibility: :public})
+
+      private =
+        checkin_fixture(%{author_uri: author.uri, place_uri: place.uri, visibility: :private})
+
+      public_id = public.id
+      private_id = private.id
+
+      assert [^public_id] =
+               place |> Entries.get_local_checkins_for_place() |> Enum.map(& &1.id)
+
+      assert [^public_id] =
+               place
+               |> Entries.get_local_checkins_for_place(scope: Scope.for_person(other))
+               |> Enum.map(& &1.id)
+
+      assert Enum.sort(
+               place
+               |> Entries.get_local_checkins_for_place(scope: Scope.for_person(author))
+               |> Enum.map(& &1.id)
+             ) == Enum.sort([public_id, private_id])
+    end
+
+    test "create_local_checkin stores the requested visibility" do
+      scope = person_scope_fixture()
+      place = place_fixture()
+      recent = NaiveDateTime.add(NaiveDateTime.utc_now(:second), -30, :minute)
+
+      attrs = %{
+        "starts_at_local" => recent,
+        "starts_tz" => "Etc/UTC",
+        "content" => "Secret spot",
+        "visibility" => "private"
+      }
+
+      {:ok, checkin} =
+        Entries.create_local_checkin(scope, place, attrs, &checkin_uri/1, &checkin_url/2,
+          mode: :publish,
+          enqueue_delivery: false
+        )
+
+      assert checkin.visibility == :private
+    end
+
+    test "enqueue_delivery is a no-op for private checkins" do
+      checkin = checkin_with(:private, person_fixture())
+
+      assert :ok = Entries.enqueue_delivery(checkin, "Create")
+      refute_enqueued(worker: Revix.Workers.DeliverEntryWorker)
+    end
+  end
 end

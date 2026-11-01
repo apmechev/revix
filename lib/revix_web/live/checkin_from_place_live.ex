@@ -29,6 +29,7 @@ defmodule RevixWeb.CheckinFromPlaceLive do
             |> assign(:companion_query, "")
             |> assign(:companion_results, [])
             |> assign(:timezones, Tzdata.zone_list() |> Enum.sort())
+            |> assign(:visibility_options, visibility_options())
             |> assign(:can_edit_datetime, scope.role == :owner)
             |> assign(:upload_captions, %{})
             |> assign(:upload_order, [])
