@@ -32,6 +32,15 @@ end
 # Sent as an Authorization header and never logged.
 config :revix, :overpass, bearer_token: System.get_env("OVERPASS_API_BEARER_TOKEN")
 
+if s3_endpoint = System.get_env("S3_ENDPOINT") do
+  endpoint = URI.parse(s3_endpoint)
+
+  config :ex_aws, :s3,
+    host: endpoint.host,
+    scheme: "#{endpoint.scheme}://",
+    port: endpoint.port
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
